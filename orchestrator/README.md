@@ -14,7 +14,7 @@ orchestrator/
 
 Комментарий `/orchestrate` на Goal Issue (лейбл `goal`):
 
-1. Cloud-агент (Cursor SDK) собирает план по промпту менеджера
+1. Локальный агент в GitHub Action (Cursor SDK) собирает план — cloud VM не нужна
 2. Диспетчер создаёт child issues в рабочих репо, ставит лейблы поверхностей
 3. Goal и children попадают на доску; Goal → **In Progress**
 4. Воркеров (`/ui-agent`, `/new-icon`) пока не запускает
@@ -28,7 +28,7 @@ orchestrator/
 | `CURSOR_API_KEY` | вызов менеджера ([Integrations](https://cursor.com/dashboard/integrations)) |
 | `ORCHESTRATOR_GITHUB_TOKEN` | PAT: scopes `repo` + `project`, доступ ко всем шести репо семьи |
 
-В Cursor Dashboard этот GitHub-аккаунт должен иметь доступ к `win-predict-ai-orchestrator` (cloud agent клонирует репо).
+Менеджер не клонирует репо в cloud VM: план собирается local-агентом на раннере GitHub Actions.
 
 ## Модули
 

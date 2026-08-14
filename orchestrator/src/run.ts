@@ -313,10 +313,7 @@ async function decompose(issue: IssueCommentEvent["issue"]): Promise<Plan> {
   const result = await Agent.prompt(prompt, {
     apiKey,
     model: { id: "composer-2.5" },
-    cloud: {
-      repos: [{ url: `https://github.com/${GOAL_REPO}` }],
-      skipReviewerRequest: true,
-    },
+    local: { cwd: ROOT },
   });
 
   console.log(`manager run=${result.id} status=${result.status}`);
@@ -434,8 +431,15 @@ async function main(): Promise<void> {
       ].join("\n"),
     );
   } catch (err) {
-    const message = err instanceof CursorAgentError ? err.message : err instanceof Error ? err.message : String(err);
-    commentOnGoal(issue.number, `Оркестратор не смог собрать план: ${message}`);
+    console.error(err);
+    const extra =
+      err instanceof CursorAgentError
+        ? ` (${[err.code, err.isRetryable ? "retryable" : "not-retryable", err.requestId]
+            .filter(Boolean)
+            .join(", ")})`
+        : "";
+    const message = err instanceof Error ? err.message : String(err);
+    commentOnGoal(issue.number, `Оркестратор не смог собрать план: ${message}${extra}`);
     process.exitCode = err instanceof CursorAgentError ? 1 : 2;
   }
 }
