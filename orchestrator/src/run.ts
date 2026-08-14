@@ -12,6 +12,7 @@ const STATUS_FIELD_ID = "PVTSSF_lAHOAom_KM4BgVLqzhahv2g";
 const STATUS_OPTION_ID = {
   Inbox: "f75ad846",
   "In Progress": "47fc9ee4",
+  Review: "57240b08",
 } as const;
 const PLAN_MARKER = "<!-- orchestrator-plan -->";
 const DISPATCH_MARKER = "<!-- orchestrator-dispatch -->";
@@ -271,7 +272,7 @@ function issueNodeId(url: string, token: string): string {
   return gh(["api", `repos/${match[1]}/issues/${match[2]}`, "--jq", ".node_id"], token);
 }
 
-function addToProject(url: string, status: "Inbox" | "In Progress", token: string): void {
+function addToProject(url: string, status: keyof typeof STATUS_OPTION_ID, token: string): void {
   try {
     const contentId = issueNodeId(url, token);
     const added = graphql<{ addProjectV2ItemById: { item: { id: string } } }>(
@@ -359,6 +360,11 @@ function createChildIssue(task: Task, goalNumber: number, created: Map<string, s
   return url;
 }
 
+function extractPrUrls(text: string): string[] {
+  const matches = text.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g);
+  return [...new Set(matches ?? [])];
+}
+
 function isRetryableWorkerStart(err: unknown): boolean {
   if (err instanceof CursorAgentError && err.isRetryable) return true;
   const message = err instanceof Error ? err.message : String(err);
@@ -367,9 +373,14 @@ function isRetryableWorkerStart(err: unknown): boolean {
   );
 }
 
-async function runMachineWorker(task: Task, issueUrl: string, token: string): Promise<string> {
+async function runMachineWorker(
+  task: Task,
+  issueUrl: string,
+  token: string,
+): Promise<{ runId: string; prUrls: string[] }> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
+  addToProject(issueUrl, "In Progress", token);
   const worker = readFileSync(join(ROOT, "orchestrator/prompts/worker.md"), "utf8");
   const { repo, number } = parseIssueUrl(issueUrl);
   const prompt = [
@@ -409,13 +420,24 @@ async function runMachineWorker(task: Task, issueUrl: string, token: string): Pr
         throw new Error(result.error?.message || `run status ${result.status}`);
       }
       const summary = (result.result ?? "").trim().slice(0, 1500) || "(нет текста)";
+      const prUrls = extractPrUrls(summary);
+      addToProject(issueUrl, "Review", token);
+      const prLines = prUrls.length ? prUrls.map((url) => `- ${url}`).join("\n") : "- (URL PR в тексте воркера не найден)";
       commentOnIssue(
         repo,
         number,
-        `${DISPATCH_MARKER}\nMy Machines воркер завершился (\`${result.id}\`, agent \`${agent.agentId}\`, \`${MACHINE_NAME}\`).\n\n${summary}`,
+        [
+          DISPATCH_MARKER,
+          `My Machines воркер завершился (\`${result.id}\`, agent \`${agent.agentId}\`, \`${MACHINE_NAME}\`).`,
+          "",
+          "**Нужна приёмка** — колонка Review. Merge сам, воркер не мержит.",
+          prLines,
+          "",
+          summary,
+        ].join("\n"),
         token,
       );
-      return result.id;
+      return { runId: result.id, prUrls };
     } catch (err) {
       lastError = err;
       if (!isRetryableWorkerStart(err) || attempt === attempts) throw err;
@@ -447,8 +469,9 @@ async function dispatchTask(
     );
     return `${issueUrl} — \`${task.trigger.command}\``;
   }
-  const runId = await runMachineWorker(task, issueUrl, token);
-  return `${issueUrl} — machine \`${runId}\``;
+  const { runId, prUrls } = await runMachineWorker(task, issueUrl, token);
+  const prNote = prUrls.length ? ` — ${prUrls.join(" ")}` : "";
+  return `${issueUrl} — machine \`${runId}\`${prNote}`;
 }
 
 async function dispatchPlan(
@@ -531,12 +554,17 @@ function loadEvent(): IssueCommentEvent {
   return JSON.parse(readFileSync(path, "utf8")) as IssueCommentEvent;
 }
 
-function commentDispatch(goalNumber: number, notes: string[]): boolean {
-  const failed = notes.some((n) => n.includes("ошибка"));
+function commentDispatch(goalNumber: number, goalUrl: string, notes: string[], token: string): boolean {
+  const failed = notes.some((n) => n.includes("ошибка") || n.includes("нет child"));
   const allSkipped = notes.length > 0 && notes.every((n) => n.includes("уже запускали"));
+  const machineDone = notes.some((n) => n.includes(" — machine "));
+  const toReview = Boolean(token) && !failed && !allSkipped && machineDone;
+  if (toReview) addToProject(goalUrl, "Review", token);
   const prefix = failed
     ? "**Воркеры (есть ошибки, `/orchestrate` можно повторить).**"
-    : `${DISPATCH_MARKER}\n**Воркеры.**`;
+    : toReview
+      ? `${DISPATCH_MARKER}\n**Воркеры.** Нужна приёмка — колонка Review. Merge сам.`
+      : `${DISPATCH_MARKER}\n**Воркеры.**`;
   commentOnGoal(goalNumber, `${prefix}\n\n${notes.map((n) => `- ${n}`).join("\n")}`);
   return !failed && !allSkipped;
 }
@@ -581,7 +609,7 @@ async function main(): Promise<void> {
         );
         return;
       }
-      if (!commentDispatch(issue.number, notes)) process.exitCode = 2;
+      if (!commentDispatch(issue.number, issue.html_url, notes, token)) process.exitCode = 2;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       commentOnGoal(issue.number, `Диспетчер не смог запустить воркеров: ${message}`);
@@ -658,7 +686,7 @@ async function main(): Promise<void> {
     );
 
     const notes = await dispatchPlan(plan, created, token, redo);
-    if (!commentDispatch(issue.number, notes)) process.exitCode = 2;
+    if (!commentDispatch(issue.number, issue.html_url, notes, token)) process.exitCode = 2;
   } catch (err) {
     console.error(err);
     const extra =

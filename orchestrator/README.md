@@ -21,6 +21,7 @@ orchestrator/
 3. Диспетчер:
    - `slash` → комментарий `/ui-agent` или `/new-icon` (Automations в `cursor-cloud-agents`, не на VPS)
    - `issue_only` / `sdk` → `Agent.create({ cloud: { env: { type: "machine", name: "win-predict-vps" }, repos } })` + `worker.md`
+4. Успешный `worker.md`: child и Goal → **Review**, комментарий «нужна приёмка» + URL PR. **Done** и merge — человек.
 
 Если план уже есть, повторный `/orchestrate` только догоняет воркеров (не плодит issues). С нуля: `/orchestrate redo`. Ошибка старта воркера **не** ставит `DISPATCH_MARKER` на Goal — `/orchestrate` можно повторить.
 
@@ -48,4 +49,4 @@ orchestrator/
 |---|---|
 | decompose | local `Agent.prompt` |
 | dispatch | issues + slash или My Machines `worker.md` |
-| watch | нет — merge и колонка Done вручную |
+| watch | после `worker.md` — колонка Review; Done и merge вручную |
