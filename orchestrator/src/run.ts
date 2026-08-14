@@ -14,6 +14,7 @@ const STATUS_OPTION_ID = {
   "In Progress": "47fc9ee4",
 } as const;
 const PLAN_MARKER = "<!-- orchestrator-plan -->";
+const DISPATCH_MARKER = "<!-- orchestrator-dispatch -->";
 const REPOS = [
   "onlyzoran/win-predict-ai-ui",
   "onlyzoran/win-predict-ai-icons",
@@ -93,10 +94,42 @@ function commentOnGoal(issueNumber: number, body: string): void {
     console.error(body);
     return;
   }
+  commentOnIssue(GOAL_REPO, issueNumber, body, token);
+}
+
+function commentOnIssue(repo: string, issueNumber: number, body: string, token: string): void {
   const dir = mkdtempSync(join(tmpdir(), "orch-"));
   const file = join(dir, "comment.md");
   writeFileSync(file, body);
-  gh(["issue", "comment", String(issueNumber), "-R", GOAL_REPO, "--body-file", file], token);
+  gh(["issue", "comment", String(issueNumber), "-R", repo, "--body-file", file], token);
+}
+
+function parseIssueUrl(url: string): { repo: string; number: number } {
+  const match = url.match(/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)/);
+  if (!match) throw new Error(`не URL issue: ${url}`);
+  return { repo: match[1], number: Number(match[2]) };
+}
+
+function listIssueComments(repo: string, issueNumber: number, token: string): Array<{ body: string }> {
+  const raw = gh(["api", `repos/${repo}/issues/${issueNumber}/comments`], token);
+  return JSON.parse(raw) as Array<{ body: string }>;
+}
+
+function extractStoredPlan(comments: Array<{ body: string }>, goalNumber: number): Plan | undefined {
+  for (const comment of [...comments].reverse()) {
+    if (!comment.body.includes(PLAN_MARKER)) continue;
+    try {
+      return validatePlan(extractJson(comment.body), goalNumber);
+    } catch {
+      /* старый комментарий без JSON */
+    }
+  }
+  return undefined;
+}
+
+function childAlreadyDispatched(url: string, token: string): boolean {
+  const { repo, number } = parseIssueUrl(url);
+  return listIssueComments(repo, number, token).some((c) => c.body.includes(DISPATCH_MARKER));
 }
 
 function extractJson(text: string): unknown {
@@ -269,8 +302,12 @@ function findExistingChild(task: Task, goalNumber: number, token: string): strin
     token,
   );
   const items = JSON.parse(raw) as Array<{ url: string; title: string; body: string }>;
-  return items.find((item) => item.body.includes(marker) || (item.body.includes(parent) && item.title === task.title))
-    ?.url;
+  const marked = items.find((item) => item.body.includes(marker));
+  if (marked) return marked.url;
+  const titled = items.find((item) => item.body.includes(parent) && item.title === task.title);
+  if (titled) return titled.url;
+  const withParent = items.filter((item) => item.body.includes(parent));
+  return withParent.length === 1 ? withParent[0].url : undefined;
 }
 
 function createChildIssue(task: Task, goalNumber: number, created: Map<string, string>, token: string): string {
@@ -285,10 +322,8 @@ function createChildIssue(task: Task, goalNumber: number, created: Map<string, s
     .filter((url): url is string => Boolean(url));
   const triggerLine =
     task.trigger.type === "slash"
-      ? `Триггер воркера (пока вручную): \`${task.trigger.command}\``
-      : task.trigger.type === "sdk"
-        ? "Триггер воркера: SDK (пока не запускается автоматически)."
-        : "Воркера нет — issue для человека.";
+      ? `Воркер: комментарий \`${task.trigger.command}\` от диспетчера.`
+      : "Воркер: общий cloud-агент (`worker.md`) от диспетчера.";
   const body = [
     `<!-- orchestrator-task:${task.id} -->`,
     task.body.trim(),
@@ -321,6 +356,110 @@ function createChildIssue(task: Task, goalNumber: number, created: Map<string, s
   );
   addToProject(url, "Inbox", token);
   return url;
+}
+
+async function runCloudWorker(task: Task, issueUrl: string, token: string): Promise<string> {
+  const apiKey = process.env.CURSOR_API_KEY?.trim();
+  if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
+  const worker = readFileSync(join(ROOT, "orchestrator/prompts/worker.md"), "utf8");
+  const { repo, number } = parseIssueUrl(issueUrl);
+  const prompt = [
+    worker,
+    "",
+    `Репозиторий: ${task.repo}`,
+    `Child issue: ${issueUrl}`,
+    `Заголовок: ${task.title}`,
+    `Критерий куска: ${task.done_when}`,
+    "",
+    "Тело задачи:",
+    task.body,
+    "",
+    `Сделай задачу в этом репо. В конце — URL PR или причина, почему PR нет.`,
+  ].join("\n");
+
+  const result = await Agent.prompt(prompt, {
+    apiKey,
+    model: { id: "composer-2.5" },
+    cloud: {
+      repos: [{ url: `https://github.com/${repo}` }],
+      skipReviewerRequest: true,
+      envVars: { GH_TOKEN: token },
+    },
+  });
+
+  console.log(`worker task=${task.id} run=${result.id} status=${result.status}`);
+  if (result.status !== "finished") {
+    throw new Error(result.error?.message || `run status ${result.status}`);
+  }
+  const summary = (result.result ?? "").trim().slice(0, 1500) || "(нет текста)";
+  commentOnIssue(
+    repo,
+    number,
+    `${DISPATCH_MARKER}\nCloud-воркер завершился (\`${result.id}\`).\n\n${summary}`,
+    token,
+  );
+  return result.id;
+}
+
+async function dispatchTask(
+  task: Task,
+  issueUrl: string,
+  token: string,
+  force: boolean,
+): Promise<string> {
+  const { repo, number } = parseIssueUrl(issueUrl);
+  if (!force && childAlreadyDispatched(issueUrl, token)) {
+    return `${issueUrl} — уже запускали`;
+  }
+  if (task.trigger.type === "slash") {
+    commentOnIssue(
+      repo,
+      number,
+      `${DISPATCH_MARKER}\n${task.trigger.command}`,
+      token,
+    );
+    return `${issueUrl} — \`${task.trigger.command}\``;
+  }
+  const runId = await runCloudWorker(task, issueUrl, token);
+  return `${issueUrl} — cloud \`${runId}\``;
+}
+
+async function dispatchPlan(
+  plan: Plan,
+  created: Map<string, string>,
+  token: string,
+  force: boolean,
+): Promise<string[]> {
+  const ordered = [...plan.tasks].sort(
+    (a, b) => a.parallel_group - b.parallel_group || a.id.localeCompare(b.id),
+  );
+  const notes: string[] = [];
+  for (const task of ordered) {
+    const url = created.get(task.id) ?? findExistingChild(task, plan.goal_number, token);
+    if (!url) {
+      notes.push(`\`${task.id}\` — нет child issue`);
+      continue;
+    }
+    try {
+      notes.push(await dispatchTask(task, url, token, force));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(err);
+      notes.push(`${url} — ошибка: ${message}`);
+      try {
+        const { repo, number } = parseIssueUrl(url);
+        commentOnIssue(
+          repo,
+          number,
+          `Не удалось запустить воркера: ${message}\n\nПовтор: \`/orchestrate\` на Goal.`,
+          token,
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return notes;
 }
 
 async function decompose(issue: IssueCommentEvent["issue"]): Promise<Plan> {
@@ -386,19 +525,34 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (!redo) {
-    const commentsJson = gh(
-      ["api", `repos/${GOAL_REPO}/issues/${issue.number}/comments`],
-      commentToken(),
-    );
-    const comments = JSON.parse(commentsJson) as Array<{ body: string }>;
-    if (comments.some((c) => c.body.includes(PLAN_MARKER))) {
+  const token = writeToken();
+  const comments = listIssueComments(GOAL_REPO, issue.number, commentToken());
+  const stored = extractStoredPlan(comments, issue.number);
+
+  if (!redo && stored) {
+    if (!token) {
+      commentOnGoal(issue.number, "Нет `ORCHESTRATOR_GITHUB_TOKEN` — воркеров не запускаю.");
+      return;
+    }
+    if (comments.some((c) => c.body.includes(DISPATCH_MARKER))) {
       commentOnGoal(
         issue.number,
-        "План уже есть. Чтобы пересобрать child issues, напиши `/orchestrate redo`.",
+        "План и воркеры уже запускались. Повтор с нуля: `/orchestrate redo`.",
       );
       return;
     }
+    try {
+      const notes = await dispatchPlan(stored, new Map(), token, false);
+      commentOnGoal(
+        issue.number,
+        `${DISPATCH_MARKER}\n**Воркеры.**\n\n${notes.map((n) => `- ${n}`).join("\n")}`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      commentOnGoal(issue.number, `Диспетчер не смог запустить воркеров: ${message}`);
+      process.exitCode = 2;
+    }
+    return;
   }
 
   try {
@@ -412,7 +566,6 @@ async function main(): Promise<void> {
       return;
     }
 
-    const token = writeToken();
     if (!token) {
       commentOnGoal(
         issue.number,
@@ -463,8 +616,16 @@ async function main(): Promise<void> {
         rows,
         gates,
         "",
-        "Воркеров пока не запускаю. Slash-команды — вручную в child issue.",
+        "```json",
+        JSON.stringify(plan, null, 2),
+        "```",
       ].join("\n"),
+    );
+
+    const notes = await dispatchPlan(plan, created, token, redo);
+    commentOnGoal(
+      issue.number,
+      `${DISPATCH_MARKER}\n**Воркеры.**\n\n${notes.map((n) => `- ${n}`).join("\n")}`,
     );
   } catch (err) {
     console.error(err);

@@ -1,39 +1,41 @@
 # Оркестратор
 
-Менеджер читает Goal Issue и возвращает JSON-план. Диспетчер в GitHub Action создаёт child issues.
+Менеджер читает Goal Issue и возвращает JSON-план. Диспетчер создаёт child issues и запускает воркеров.
 
 ```
 orchestrator/
   prompts/manager.md
+  prompts/worker.md          # общий исполнитель (app/admin/data)
   schema/plan.schema.json
   schema/plan.example.json
-  src/run.ts                 # Action /orchestrate
+  src/run.ts
 ```
 
 ## `/orchestrate`
 
 Комментарий `/orchestrate` на Goal Issue (лейбл `goal`):
 
-1. Локальный агент в GitHub Action (Cursor SDK) собирает план — cloud VM не нужна
-2. Диспетчер создаёт child issues в рабочих репо, ставит лейблы поверхностей
-3. Goal и children попадают на доску; Goal → **In Progress**
-4. Воркеров (`/ui-agent`, `/new-icon`) пока не запускает
+1. Local-агент на GitHub runner собирает план
+2. Child issues в рабочих репо + доска, Goal → **In Progress**
+3. Диспетчер:
+   - `slash` → комментарий `/ui-agent` или `/new-icon` (существующие Automations)
+   - `issue_only` / `sdk` → cloud-агент с `worker.md` в целевом репо
 
-Повтор: `/orchestrate redo`.
+Если план уже есть, повторный `/orchestrate` только догоняет воркеров (не плодит issues). С нуля: `/orchestrate redo`.
 
 ## Секреты репо
 
 | Secret | Зачем |
 |---|---|
-| `CURSOR_API_KEY` | вызов менеджера ([Integrations](https://cursor.com/dashboard/integrations)) |
-| `ORCHESTRATOR_GITHUB_TOKEN` | PAT: scopes `repo` + `project`, доступ ко всем шести репо семьи |
+| `CURSOR_API_KEY` | менеджер (local) и воркеры (cloud) |
+| `ORCHESTRATOR_GITHUB_TOKEN` | PAT: `repo` + `project`; в VM воркера как `$GH_TOKEN` |
 
-Менеджер не клонирует репо в cloud VM: план собирается local-агентом на раннере GitHub Actions.
+В Cursor Dashboard GitHub-аккаунт ключа должен видеть рабочие репо (клонирование cloud VM).
 
 ## Модули
 
 | Модуль | Сейчас |
 |---|---|
-| decompose | `Agent.prompt` + схема |
-| dispatch | `gh issue create`, лейблы, Project |
-| watch | ещё нет — slash вручную |
+| decompose | local `Agent.prompt` |
+| dispatch | issues + slash или cloud `worker.md` |
+| watch | нет — merge и колонка Done вручную |
