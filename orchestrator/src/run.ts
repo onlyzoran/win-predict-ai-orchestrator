@@ -7,8 +7,12 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GOAL_REPO = "onlyzoran/win-predict-ai-orchestrator";
-const PROJECT_OWNER = "onlyzoran";
-const PROJECT_NUMBER = 3;
+const PROJECT_ID = "PVT_kwHOAom_KM4BgVLq";
+const STATUS_FIELD_ID = "PVTSSF_lAHOAom_KM4BgVLqzhahv2g";
+const STATUS_OPTION_ID = {
+  Inbox: "f75ad846",
+  "In Progress": "47fc9ee4",
+} as const;
 const PLAN_MARKER = "<!-- orchestrator-plan -->";
 const REPOS = [
   "onlyzoran/win-predict-ai-ui",
@@ -213,38 +217,69 @@ function ensureLabel(repo: string, name: Surface, token: string): void {
   );
 }
 
+function graphql<T>(token: string, query: string, variables: Record<string, string>): T {
+  const args = ["api", "graphql", "-f", `query=${query}`];
+  for (const [key, value] of Object.entries(variables)) {
+    args.push("-f", `${key}=${value}`);
+  }
+  const raw = gh(args, token);
+  const payload = JSON.parse(raw) as { data?: T; errors?: Array<{ message: string }> };
+  if (payload.errors?.length) {
+    throw new Error(payload.errors.map((e) => e.message).join("; "));
+  }
+  if (!payload.data) throw new Error("пустой GraphQL data");
+  return payload.data;
+}
+
+function issueNodeId(url: string, token: string): string {
+  const match = url.match(/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)/);
+  if (!match) throw new Error(`не URL issue: ${url}`);
+  return gh(["api", `repos/${match[1]}/issues/${match[2]}`, "--jq", ".node_id"], token);
+}
+
 function addToProject(url: string, status: "Inbox" | "In Progress", token: string): void {
   try {
-    gh(
-      ["project", "item-add", String(PROJECT_NUMBER), "--owner", PROJECT_OWNER, "--url", url],
+    const contentId = issueNodeId(url, token);
+    const added = graphql<{ addProjectV2ItemById: { item: { id: string } } }>(
       token,
+      "mutation($projectId:ID!,$contentId:ID!){addProjectV2ItemById(input:{projectId:$projectId,contentId:$contentId}){item{id}}}",
+      { projectId: PROJECT_ID, contentId },
+    );
+    graphql(
+      token,
+      "mutation($projectId:ID!,$itemId:ID!,$fieldId:ID!,$optionId:String!){updateProjectV2ItemFieldValue(input:{projectId:$projectId,itemId:$itemId,fieldId:$fieldId,value:{singleSelectOptionId:$optionId}}){projectV2Item{id}}}",
+      {
+        projectId: PROJECT_ID,
+        itemId: added.addProjectV2ItemById.item.id,
+        fieldId: STATUS_FIELD_ID,
+        optionId: STATUS_OPTION_ID[status],
+      },
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (!/already|exists|duplicate/i.test(message)) {
-      console.warn(`project item-add: ${message}`);
-    }
+    console.warn(`project add ${url}: ${message}`);
   }
-  gh(
-    [
-      "project",
-      "item-edit",
-      String(PROJECT_NUMBER),
-      "--owner",
-      PROJECT_OWNER,
-      "--url",
-      url,
-      "--field",
-      "Status",
-      "--value",
-      status,
-    ],
+}
+
+function findExistingChild(task: Task, goalNumber: number, token: string): string | undefined {
+  const parent = `Parent: ${GOAL_REPO}#${goalNumber}`;
+  const marker = `<!-- orchestrator-task:${task.id} -->`;
+  const raw = gh(
+    ["issue", "list", "-R", task.repo, "--state", "open", "--limit", "50", "--json", "url,title,body"],
     token,
   );
+  const items = JSON.parse(raw) as Array<{ url: string; title: string; body: string }>;
+  return items.find((item) => item.body.includes(marker) || (item.body.includes(parent) && item.title === task.title))
+    ?.url;
 }
 
 function createChildIssue(task: Task, goalNumber: number, created: Map<string, string>, token: string): string {
   ensureLabel(task.repo, task.surface, token);
+  const existing = findExistingChild(task, goalNumber, token);
+  if (existing) {
+    addToProject(existing, "Inbox", token);
+    return existing;
+  }
   const deps = task.depends_on
     .map((id) => created.get(id))
     .filter((url): url is string => Boolean(url));
@@ -255,6 +290,7 @@ function createChildIssue(task: Task, goalNumber: number, created: Map<string, s
         ? "Триггер воркера: SDK (пока не запускается автоматически)."
         : "Воркера нет — issue для человека.";
   const body = [
+    `<!-- orchestrator-task:${task.id} -->`,
     task.body.trim(),
     "",
     triggerLine,
