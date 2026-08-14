@@ -81,6 +81,28 @@ function writeToken(): string {
   return process.env.ORCHESTRATOR_GITHUB_TOKEN || "";
 }
 
+async function notifyTelegram(text: string): Promise<void> {
+  const bot = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const chat = process.env.TELEGRAM_CHAT_ID?.trim();
+  if (!bot || !chat) return;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${bot}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chat,
+        text: text.slice(0, 3500),
+        disable_web_page_preview: true,
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`telegram ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+  } catch (err) {
+    console.warn(`telegram: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 function gh(args: string[], token: string): string {
   const result = spawnSync("gh", args, {
     encoding: "utf8",
@@ -412,6 +434,7 @@ async function runMachineWorker(
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
   addToProject(issueUrl, "In Progress", token);
+  await notifyTelegram(`My Machines старт: ${task.id}\n${issueUrl}`);
   const worker = readFileSync(join(ROOT, "orchestrator/prompts/worker.md"), "utf8");
   const { repo, number } = parseIssueUrl(issueUrl);
   const prompt = [
@@ -468,6 +491,9 @@ async function runMachineWorker(
         ].join("\n"),
         token,
       );
+      await notifyTelegram(
+        `My Machines готов: ${task.id}\n${prUrls.length ? prUrls.join("\n") : issueUrl}`,
+      );
       return { runId: result.id, prUrls };
     } catch (err) {
       lastError = err;
@@ -496,6 +522,7 @@ async function dispatchTask(
   if (task.trigger.type === "slash") {
     addToProject(issueUrl, "In Progress", token);
     commentOnIssue(repo, number, task.trigger.command, token);
+    await notifyTelegram(`Slash ${task.trigger.command}: ждём PR\n${issueUrl}`);
     const prUrls = await waitForOpenPr(issueUrl, token, SLASH_WAIT_MS);
     addToProject(issueUrl, "Review", token);
     commentOnIssue(
@@ -510,6 +537,7 @@ async function dispatchTask(
       ].join("\n"),
       token,
     );
+    await notifyTelegram(`Slash ${task.trigger.command}: PR\n${prUrls.join("\n")}`);
     return `${issueUrl} — \`${task.trigger.command}\` — ${prUrls.join(" ")}`;
   }
   const { runId, prUrls } = await runMachineWorker(task, issueUrl, token);
@@ -552,6 +580,7 @@ async function dispatchPlan(
       const message = err instanceof Error ? err.message : String(err);
       console.error(err);
       notes.push(`${url} — ошибка: ${message}`);
+      await notifyTelegram(`Ошибка воркера: ${task.id}\n${url}\n${message.slice(0, 500)}`);
       try {
         const { repo, number } = parseIssueUrl(url);
         commentOnIssue(
@@ -610,7 +639,12 @@ function loadEvent(): IssueCommentEvent {
   return JSON.parse(readFileSync(path, "utf8")) as IssueCommentEvent;
 }
 
-function commentDispatch(goalNumber: number, goalUrl: string, notes: string[], token: string): boolean {
+async function commentDispatch(
+  goalNumber: number,
+  goalUrl: string,
+  notes: string[],
+  token: string,
+): Promise<boolean> {
   const failed = notes.some((n) => n.includes("ошибка") || n.includes("нет child"));
   const allSkipped = notes.length > 0 && notes.every((n) => n.includes("уже запускали"));
   const machineDone = notes.some((n) => /\/pull\/\d+/.test(n) || n.includes(" — machine "));
@@ -622,6 +656,10 @@ function commentDispatch(goalNumber: number, goalUrl: string, notes: string[], t
       ? `${DISPATCH_MARKER}\n**Воркеры.** Нужна приёмка — колонка Review. Merge сам.`
       : `${DISPATCH_MARKER}\n**Воркеры.**`;
   commentOnGoal(goalNumber, `${prefix}\n\n${notes.map((n) => `- ${n}`).join("\n")}`);
+  const digest = notes.map((n) => `- ${n}`).join("\n");
+  if (failed) await notifyTelegram(`Goal #${goalNumber}: ошибки\n${goalUrl}\n${digest}`);
+  else if (toReview) await notifyTelegram(`Goal #${goalNumber}: Review, нужна приёмка\n${goalUrl}\n${digest}`);
+  else if (!allSkipped) await notifyTelegram(`Goal #${goalNumber}: воркеры\n${goalUrl}\n${digest}`);
   return !failed && !allSkipped;
 }
 
@@ -646,6 +684,10 @@ async function main(): Promise<void> {
     return;
   }
 
+  await notifyTelegram(
+    `Оркестратор: ${redo ? "redo " : ""}старт\n#${issue.number} ${issue.title}\n${issue.html_url}`,
+  );
+
   const token = writeToken();
   const comments = listIssueComments(GOAL_REPO, issue.number, commentToken());
   const stored = extractStoredPlan(comments, issue.number);
@@ -663,12 +705,14 @@ async function main(): Promise<void> {
           issue.number,
           "Воркеры по этому плану уже запускались. Повтор с нуля: `/orchestrate redo`.",
         );
+        await notifyTelegram(`Goal #${issue.number}: уже запускали, нужен redo\n${issue.html_url}`);
         return;
       }
-      if (!commentDispatch(issue.number, issue.html_url, notes, token)) process.exitCode = 2;
+      if (!(await commentDispatch(issue.number, issue.html_url, notes, token))) process.exitCode = 2;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       commentOnGoal(issue.number, `Диспетчер не смог запустить воркеров: ${message}`);
+      await notifyTelegram(`Goal #${issue.number}: диспетчер упал\n${issue.html_url}\n${message.slice(0, 500)}`);
       process.exitCode = 2;
     }
     return;
@@ -682,6 +726,7 @@ async function main(): Promise<void> {
         issue.number,
         `${PLAN_MARKER}\n**Статус:** \`${plan.status}\`\n\n${plan.summary}`,
       );
+      await notifyTelegram(`Goal #${issue.number}: ${plan.status}\n${plan.summary}\n${issue.html_url}`);
       return;
     }
 
@@ -741,8 +786,10 @@ async function main(): Promise<void> {
       ].join("\n"),
     );
 
+    await notifyTelegram(`Goal #${issue.number}: план готов, запускаю воркеров\n${plan.summary}\n${issue.html_url}`);
+
     const notes = await dispatchPlan(plan, created, token, redo);
-    if (!commentDispatch(issue.number, issue.html_url, notes, token)) process.exitCode = 2;
+    if (!(await commentDispatch(issue.number, issue.html_url, notes, token))) process.exitCode = 2;
   } catch (err) {
     console.error(err);
     const extra =
@@ -753,6 +800,7 @@ async function main(): Promise<void> {
         : "";
     const message = err instanceof Error ? err.message : String(err);
     commentOnGoal(issue.number, `Оркестратор не смог собрать план: ${message}${extra}`);
+    await notifyTelegram(`Goal #${issue.number}: план не собрался\n${issue.html_url}\n${message.slice(0, 500)}${extra}`);
     process.exitCode = err instanceof CursorAgentError ? 1 : 2;
   }
 }

@@ -32,4 +32,6 @@ jobs:
           ORCHESTRATOR_GITHUB_TOKEN: ${{ secrets.ORCHESTRATOR_GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CURSOR_MACHINE_NAME: win-predict-vps
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: npm run orchestrate
