@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/onlyzoran/win-predict-ai-orchestrator/orchestrator/schema/plan.schema.json",
+  "title": "OrchestratorPlan",
+  "description": "Результат менеджера: декомпозиция Goal Issue в child-задачи.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["goal_number", "summary", "status", "surfaces", "tasks"],
+  "properties": {
+    "goal_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Короткий план на русском для комментария к Goal."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ready", "needs_human", "out_of_scope"]
+    },
+    "surfaces": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["ui", "icons", "data", "app", "admin"]
+      },
+      "uniqueItems": true
+    },
+    "human_gates": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "tasks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/task" }
+    }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "surface",
+        "repo",
+        "title",
+        "body",
+        "depends_on",
+        "parallel_group",
+        "trigger",
+        "done_when"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "surface": {
+          "type": "string",
+          "enum": ["ui", "icons", "data", "app", "admin"]
+        },
+        "repo": {
+          "type": "string",
+          "enum": [
+            "onlyzoran/win-predict-ai-ui",
+            "onlyzoran/win-predict-ai-icons",
+            "onlyzoran/win-predict-ai-data",
+            "onlyzoran/win-predict-ai",
+            "onlyzoran/win-predict-ai-admin"
+          ]
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "body": { "type": "string", "minLength": 1 },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "parallel_group": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Меньшее число раньше. Одинаковое — можно параллельно."
+        },
+        "trigger": { "$ref": "#/$defs/trigger" },
+        "done_when": { "type": "string", "minLength": 1 }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["slash", "sdk", "issue_only"]
+        },
+        "command": {
+          "type": "string",
+          "enum": ["/ui-agent", "/new-icon"]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "slash" } } },
+          "then": { "required": ["command"] }
+        }
+      ]
+    }
+  }
+}

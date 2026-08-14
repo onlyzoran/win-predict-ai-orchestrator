@@ -18,6 +18,8 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 Контракт цели: [docs/goal-contract.md](docs/goal-contract.md). Новый Goal — шаблон **Goal**. Старт: комментарий `/orchestrate`.
 
+Скелет менеджера: [orchestrator/](orchestrator/) — промпт, JSON-план, маршруты по пяти репо.
+
 ## Project
 
 Доска: [win-predict-ai](https://github.com/users/onlyzoran/projects/3) (приватная).
@@ -26,4 +28,4 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 ## Статус
 
-Контракт Goal Issue заведён. Дальше: скелет оркестратора, Action `/orchestrate`.
+Контракт Goal Issue заведён, скелет менеджера в [orchestrator/](orchestrator/). Дальше: Action `/orchestrate` (создание child issues по плану).

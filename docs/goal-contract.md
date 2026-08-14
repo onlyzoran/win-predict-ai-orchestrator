@@ -45,3 +45,5 @@ Goal — одна высокоуровневая цель. Живёт тольк
 ## Child issues
 
 Одно child issue — один рабочий репо. В теле: ссылка на Goal, что сделать, критерий готовности куска. Триггер воркера (когда дойдём до Action): `/ui-agent`, `/new-icon`, либо SDK для `data`.
+
+Как режется цель: [orchestrator/prompts/manager.md](../orchestrator/prompts/manager.md). Форма плана: [orchestrator/schema/plan.schema.json](../orchestrator/schema/plan.schema.json).
