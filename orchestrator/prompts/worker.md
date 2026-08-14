@@ -11,6 +11,7 @@
 Рабочие клоны: `/opt/cursor-workers/<repo>`. Прод админки: `/var/www/win-predict-ai-admin` — **не открывать, не править, не рестартить**.
 
 - Работай только в клоне репо из промпта.
+- Если репо `win-predict-ai-ui`: сначала `DESIGN.md`. Theme CSS не публиковать в npm. Не трогать app/admin.
 - Не трогай nginx, docker compose прода, systemd чужих сервисов, `.env` продакшена.
 - Не деплой, не `pm2 restart`, не `systemctl restart` продуктовых юнитов.
 

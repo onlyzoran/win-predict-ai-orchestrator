@@ -376,7 +376,7 @@ function createChildIssue(task: Task, goalNumber: number, created: Map<string, s
     .map((id) => created.get(id))
     .filter((url): url is string => Boolean(url));
   const triggerLine =
-    task.trigger.type === "slash"
+    task.trigger.type === "slash" && task.trigger.command !== "/ui-agent"
       ? `Воркер: комментарий \`${task.trigger.command}\` от диспетчера.`
       : `Воркер: My Machines (\`worker.md\`) на \`${MACHINE_NAME}\`.`;
   const body = [
@@ -519,7 +519,7 @@ async function dispatchTask(
     const prNote = prs.length ? ` — ${prs.join(" ")}` : "";
     return `${issueUrl} — уже запускали${prNote}`;
   }
-  if (task.trigger.type === "slash") {
+  if (task.trigger.type === "slash" && task.trigger.command !== "/ui-agent") {
     addToProject(issueUrl, "In Progress", token);
     commentOnIssue(repo, number, task.trigger.command, token);
     await notifyTelegram(`Slash ${task.trigger.command}: ждём PR\n${issueUrl}`);
