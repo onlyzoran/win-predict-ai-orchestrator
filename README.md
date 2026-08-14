@@ -20,9 +20,9 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 ## Project
 
-Колонки: **Inbox** → **In Progress** → **Review** → **Done**.
+Доска: [win-predict-ai](https://github.com/users/onlyzoran/projects/3) (приватная).
 
-Доска на GitHub ещё не создана: у текущего `gh` нет scope `project`. После `gh auth refresh -s project,read:project` заведём её и привяжем к шести репо.
+Колонки: **Inbox** → **In Progress** → **Review** → **Done**. Привязана к этому репо и пяти рабочим.
 
 ## Статус
 
