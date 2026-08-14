@@ -377,28 +377,42 @@ async function runCloudWorker(task: Task, issueUrl: string, token: string): Prom
     `Сделай задачу в этом репо. В конце — URL PR или причина, почему PR нет.`,
   ].join("\n");
 
-  const result = await Agent.prompt(prompt, {
-    apiKey,
-    model: { id: "composer-2.5" },
-    cloud: {
-      repos: [{ url: `https://github.com/${repo}` }],
-      skipReviewerRequest: true,
-      envVars: { GH_TOKEN: token },
-    },
-  });
-
-  console.log(`worker task=${task.id} run=${result.id} status=${result.status}`);
-  if (result.status !== "finished") {
-    throw new Error(result.error?.message || `run status ${result.status}`);
+  const attempts = 4;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const result = await Agent.prompt(prompt, {
+        apiKey,
+        model: { id: "composer-2.5" },
+        cloud: {
+          repos: [{ url: `https://github.com/${repo}` }],
+          skipReviewerRequest: true,
+          envVars: { GH_TOKEN: token },
+        },
+      });
+      console.log(`worker task=${task.id} run=${result.id} status=${result.status} attempt=${attempt}`);
+      if (result.status !== "finished") {
+        throw new Error(result.error?.message || `run status ${result.status}`);
+      }
+      const summary = (result.result ?? "").trim().slice(0, 1500) || "(нет текста)";
+      commentOnIssue(
+        repo,
+        number,
+        `${DISPATCH_MARKER}\nCloud-воркер завершился (\`${result.id}\`).\n\n${summary}`,
+        token,
+      );
+      return result.id;
+    } catch (err) {
+      lastError = err;
+      const message = err instanceof Error ? err.message : String(err);
+      const exhausted = /resource_exhausted/i.test(message);
+      if (!exhausted || attempt === attempts) throw err;
+      const waitMs = 30_000 * attempt;
+      console.warn(`worker ${task.id} resource_exhausted, retry ${attempt}/${attempts} in ${waitMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
   }
-  const summary = (result.result ?? "").trim().slice(0, 1500) || "(нет текста)";
-  commentOnIssue(
-    repo,
-    number,
-    `${DISPATCH_MARKER}\nCloud-воркер завершился (\`${result.id}\`).\n\n${summary}`,
-    token,
-  );
-  return result.id;
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function dispatchTask(
@@ -504,6 +518,16 @@ function loadEvent(): IssueCommentEvent {
   return JSON.parse(readFileSync(path, "utf8")) as IssueCommentEvent;
 }
 
+function commentDispatch(goalNumber: number, notes: string[]): boolean {
+  const failed = notes.some((n) => n.includes("ошибка"));
+  const allSkipped = notes.length > 0 && notes.every((n) => n.includes("уже запускали"));
+  const prefix = failed
+    ? "**Воркеры (есть ошибки, `/orchestrate` можно повторить).**"
+    : `${DISPATCH_MARKER}\n**Воркеры.**`;
+  commentOnGoal(goalNumber, `${prefix}\n\n${notes.map((n) => `- ${n}`).join("\n")}`);
+  return !failed && !allSkipped;
+}
+
 async function main(): Promise<void> {
   const event = loadEvent();
   const { comment, issue } = event;
@@ -534,19 +558,17 @@ async function main(): Promise<void> {
       commentOnGoal(issue.number, "Нет `ORCHESTRATOR_GITHUB_TOKEN` — воркеров не запускаю.");
       return;
     }
-    if (comments.some((c) => c.body.includes(DISPATCH_MARKER))) {
-      commentOnGoal(
-        issue.number,
-        "План и воркеры уже запускались. Повтор с нуля: `/orchestrate redo`.",
-      );
-      return;
-    }
     try {
       const notes = await dispatchPlan(stored, new Map(), token, false);
-      commentOnGoal(
-        issue.number,
-        `${DISPATCH_MARKER}\n**Воркеры.**\n\n${notes.map((n) => `- ${n}`).join("\n")}`,
-      );
+      const allSkipped = notes.length > 0 && notes.every((n) => n.includes("уже запускали"));
+      if (allSkipped) {
+        commentOnGoal(
+          issue.number,
+          "Воркеры по этому плану уже запускались. Повтор с нуля: `/orchestrate redo`.",
+        );
+        return;
+      }
+      if (!commentDispatch(issue.number, notes)) process.exitCode = 2;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       commentOnGoal(issue.number, `Диспетчер не смог запустить воркеров: ${message}`);
@@ -623,10 +645,7 @@ async function main(): Promise<void> {
     );
 
     const notes = await dispatchPlan(plan, created, token, redo);
-    commentOnGoal(
-      issue.number,
-      `${DISPATCH_MARKER}\n**Воркеры.**\n\n${notes.map((n) => `- ${n}`).join("\n")}`,
-    );
+    if (!commentDispatch(issue.number, notes)) process.exitCode = 2;
   } catch (err) {
     console.error(err);
     const extra =
