@@ -1,0 +1,29 @@
+[Unit]
+Description=Cursor My Machines worker (win-predict-vps)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cursor-worker
+Group=cursor-worker
+WorkingDirectory=/opt/cursor-workers/win-predict-ai
+EnvironmentFile=-/etc/cursor-worker.env
+Environment=HOME=/opt/cursor-workers
+Environment=PATH=/opt/cursor-workers/.local/bin:/usr/local/bin:/usr/bin:/bin
+NoNewPrivileges=true
+# Do not add --pool. This is My Machines, not Self-Hosted Pool.
+ExecStart=/opt/cursor-workers/.local/bin/agent worker \
+  --name win-predict-vps \
+  --data-dir /opt/cursor-workers/data \
+  --idle-release-timeout 0 \
+  --worker-dir /opt/cursor-workers/win-predict-ai \
+  --worker-dir /opt/cursor-workers/win-predict-ai-admin \
+  --worker-dir /opt/cursor-workers/win-predict-ai-data \
+  start --verbose
+Restart=always
+RestartSec=10
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

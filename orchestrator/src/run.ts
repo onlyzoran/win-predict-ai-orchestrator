@@ -15,6 +15,7 @@ const STATUS_OPTION_ID = {
 } as const;
 const PLAN_MARKER = "<!-- orchestrator-plan -->";
 const DISPATCH_MARKER = "<!-- orchestrator-dispatch -->";
+const MACHINE_NAME = process.env.CURSOR_MACHINE_NAME?.trim() || "win-predict-vps";
 const REPOS = [
   "onlyzoran/win-predict-ai-ui",
   "onlyzoran/win-predict-ai-icons",
@@ -323,7 +324,7 @@ function createChildIssue(task: Task, goalNumber: number, created: Map<string, s
   const triggerLine =
     task.trigger.type === "slash"
       ? `Воркер: комментарий \`${task.trigger.command}\` от диспетчера.`
-      : "Воркер: общий cloud-агент (`worker.md`) от диспетчера.";
+      : `Воркер: My Machines (\`worker.md\`) на \`${MACHINE_NAME}\`.`;
   const body = [
     `<!-- orchestrator-task:${task.id} -->`,
     task.body.trim(),
@@ -358,7 +359,15 @@ function createChildIssue(task: Task, goalNumber: number, created: Map<string, s
   return url;
 }
 
-async function runCloudWorker(task: Task, issueUrl: string, token: string): Promise<string> {
+function isRetryableWorkerStart(err: unknown): boolean {
+  if (err instanceof CursorAgentError && err.isRetryable) return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /resource_exhausted|unavailable|not (found|connected|online)|no matching (worker|machine)|machine.+(offline|not)/i.test(
+    message,
+  );
+}
+
+async function runMachineWorker(task: Task, issueUrl: string, token: string): Promise<string> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
   const worker = readFileSync(join(ROOT, "orchestrator/prompts/worker.md"), "utf8");
@@ -381,16 +390,21 @@ async function runCloudWorker(task: Task, issueUrl: string, token: string): Prom
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      const result = await Agent.prompt(prompt, {
+      await using agent = await Agent.create({
         apiKey,
         model: { id: "composer-2.5" },
         cloud: {
-          repos: [{ url: `https://github.com/${repo}` }],
+          env: { type: "machine", name: MACHINE_NAME },
+          repos: [{ url: `https://github.com/${repo}`, startingRef: "main" }],
           skipReviewerRequest: true,
           envVars: { GH_TOKEN: token },
         },
       });
-      console.log(`worker task=${task.id} run=${result.id} status=${result.status} attempt=${attempt}`);
+      const run = await agent.send(prompt);
+      console.log(
+        `worker task=${task.id} agent=${agent.agentId} run=${run.id} machine=${MACHINE_NAME} attempt=${attempt}`,
+      );
+      const result = await run.wait();
       if (result.status !== "finished") {
         throw new Error(result.error?.message || `run status ${result.status}`);
       }
@@ -398,17 +412,16 @@ async function runCloudWorker(task: Task, issueUrl: string, token: string): Prom
       commentOnIssue(
         repo,
         number,
-        `${DISPATCH_MARKER}\nCloud-воркер завершился (\`${result.id}\`).\n\n${summary}`,
+        `${DISPATCH_MARKER}\nMy Machines воркер завершился (\`${result.id}\`, agent \`${agent.agentId}\`, \`${MACHINE_NAME}\`).\n\n${summary}`,
         token,
       );
       return result.id;
     } catch (err) {
       lastError = err;
-      const message = err instanceof Error ? err.message : String(err);
-      const exhausted = /resource_exhausted/i.test(message);
-      if (!exhausted || attempt === attempts) throw err;
+      if (!isRetryableWorkerStart(err) || attempt === attempts) throw err;
       const waitMs = 30_000 * attempt;
-      console.warn(`worker ${task.id} resource_exhausted, retry ${attempt}/${attempts} in ${waitMs}ms`);
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`worker ${task.id} start failed, retry ${attempt}/${attempts} in ${waitMs}ms: ${message}`);
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
   }
@@ -434,8 +447,8 @@ async function dispatchTask(
     );
     return `${issueUrl} — \`${task.trigger.command}\``;
   }
-  const runId = await runCloudWorker(task, issueUrl, token);
-  return `${issueUrl} — cloud \`${runId}\``;
+  const runId = await runMachineWorker(task, issueUrl, token);
+  return `${issueUrl} — machine \`${runId}\``;
 }
 
 async function dispatchPlan(

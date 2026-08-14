@@ -28,4 +28,4 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 ## Статус
 
-Action `/orchestrate` создаёт child issues и запускает воркеров (`slash` или cloud `worker.md`).
+Action `/orchestrate` создаёт child issues и запускает воркеров (`slash` или My Machines `worker.md` на VPS `win-predict-vps`).

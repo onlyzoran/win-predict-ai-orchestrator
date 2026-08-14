@@ -44,6 +44,6 @@ Goal — одна высокоуровневая цель. Живёт тольк
 
 ## Child issues
 
-Одно child issue — один рабочий репо. Диспетчер после плана запускает воркера: `/ui-agent`, `/new-icon`, или cloud-агент с `worker.md` для app/admin/data.
+Одно child issue — один рабочий репо. Диспетчер после плана запускает воркера: `/ui-agent`, `/new-icon`, или My Machines `worker.md` для app/admin/data.
 
 Как режется цель: [orchestrator/prompts/manager.md](../orchestrator/prompts/manager.md). Форма плана: [orchestrator/schema/plan.schema.json](../orchestrator/schema/plan.schema.json).

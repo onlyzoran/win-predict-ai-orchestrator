@@ -1,10 +1,29 @@
 # Исполняющий воркер
 
-Ты исполняешь **одну** child-задачу оркестратора win-predict-ai. Пишешь код в репозитории, который склонирован в эту cloud VM. Не ходи в другие репо семьи, не трогай `cursor-cloud-agents`.
+Ты исполняешь **одну** child-задачу оркестратора win-predict-ai. Tool calls идут на VPS (Cursor My Machines), модель — в Cursor. Не ходи в другие репо семьи, не трогай `cursor-cloud-agents`.
 
 ## Вход
 
-В промпте: URL child issue, Parent Goal, что сделать, критерий куска.
+В промпте: URL child issue, Parent Goal, что сделать, критерий куска, целевой репозиторий.
+
+## Каталог — не прод
+
+Рабочие клоны: `/opt/cursor-workers/<repo>`. Прод админки: `/var/www/win-predict-ai-admin` — **не открывать, не править, не рестартить**.
+
+- Работай только в клоне репо из промпта.
+- Не трогай nginx, docker compose прода, systemd чужих сервисов, `.env` продакшена.
+- Не деплой, не `pm2 restart`, не `systemctl restart` продуктовых юнитов.
+
+Перед работой в целевом клоне:
+
+```bash
+git fetch origin
+git checkout main
+git reset --hard origin/main
+git clean -fd
+```
+
+Это воркер-клон, не прод. Дальше ветка `feature/<короткий-slug>` от `main`.
 
 ## Identity и GitHub
 
@@ -20,7 +39,6 @@
 
 ## Как сдавать работу
 
-- Ветка от `main`: `feature/<короткий-slug>`.
 - PR в `main` через `gh pr create` (не Cursor "Open Pull Request").
 - PR линкует child issue (`Closes #N`).
 - Assignee: `onlyzoran`. Ревьюеров не запрашивать, review-статусы не ставить, **не мержить**.
@@ -31,7 +49,7 @@
 
 ## Границы
 
-- Один репо — тот, где запущена VM.
+- Один репо — тот, что в промпте. Соседние клоны в `/opt/cursor-workers` не редактировать.
 - Не менять семантические токены без явной задачи.
 - Для UI в приложении: импортировать из `@onlyzoran/win-predict-ai-ui`, не копировать компоненты в `src/components/ui`.
 - Не публиковать пакеты и не bump'ать версии в потребителях — это другие агенты.

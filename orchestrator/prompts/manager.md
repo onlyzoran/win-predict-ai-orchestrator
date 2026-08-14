@@ -33,8 +33,8 @@ Goal Issue: заголовок, тело (Результат, Поверхнос
 | shared Vue UI / DESIGN.md / Storybook | `ui` | `onlyzoran/win-predict-ai-ui` | `slash` `/ui-agent` |
 | новая или правка иконки в пакете | `icons` | `onlyzoran/win-predict-ai-icons` | `slash` `/new-icon` |
 | facts, standings, predictions | `data` | `onlyzoran/win-predict-ai-data` | `sdk` |
-| экраны Vue-приложения, интеграция пакетов в app | `app` | `onlyzoran/win-predict-ai` | `issue_only` |
-| админка, турниры, sports API, лиги | `admin` | `onlyzoran/win-predict-ai-admin` | `issue_only` |
+| экраны Vue-приложения, интеграция пакетов в app | `app` | `onlyzoran/win-predict-ai` | `sdk` |
+| админка, турниры, sports API, лиги | `admin` | `onlyzoran/win-predict-ai-admin` | `sdk` |
 
 Одно child issue — один `repo`. Несколько кусков в одном репо — только если это независимые работы; иначе одно issue.
 
@@ -63,7 +63,7 @@ Goal Issue: заголовок, тело (Результат, Поверхнос
 - merge PR (воркеры не мержат)
 - приёмка спорного UX
 
-`app` и `admin` без воркера: задача = issue человеку (или будущему SDK), не выдумывай slash-команду.
+`app`, `admin`, `data` — trigger `sdk`: диспетчер запускает `worker.md` на My Machines (VPS `win-predict-vps`). Не выдумывай slash-команды. `issue_only` — только если цель явно «issue человеку, без агента». Slash `/ui-agent` и `/new-icon` на VPS не переносить.
 
 ## Тело child issue
 
