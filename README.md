@@ -16,6 +16,14 @@
 
 Goal Issues — в этом репо. Child issues — в таблице выше.
 
+Контракт цели: [docs/goal-contract.md](docs/goal-contract.md). Новый Goal — шаблон **Goal**. Старт: комментарий `/orchestrate`.
+
+## Project
+
+Колонки: **Inbox** → **In Progress** → **Review** → **Done**.
+
+Доска на GitHub ещё не создана: у текущего `gh` нет scope `project`. После `gh auth refresh -s project,read:project` заведём её и привяжем к шести репо.
+
 ## Статус
 
-Репозиторий только создан. Дальше по шагам: шаблон Goal Issue, колонки Project, скелет оркестратора, Action `/orchestrate`.
+Контракт Goal Issue заведён. Дальше: скелет оркестратора, Action `/orchestrate`.

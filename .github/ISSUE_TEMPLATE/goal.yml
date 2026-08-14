@@ -1,0 +1,46 @@
+name: Goal
+description: High-level цель. Оркестратор режет её на child issues в рабочих репо.
+title: "[Goal] "
+labels: ["goal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Цель живёт только здесь. После `/orchestrate` оркестратор создаст child issues
+        в `ui` / `icons` / `data` / `app` / `admin`.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Результат
+      description: Что должно быть правдой, когда цель закрыта. Один абзац.
+      placeholder: В админке можно задать порядок туров, на фронте он отображается в виджете турнира.
+    validations:
+      required: true
+  - type: checkboxes
+    id: surfaces
+    attributes:
+      label: Поверхности
+      description: Где ожидаются изменения. Оркестратор может сузить или расширить список.
+      options:
+        - label: ui (`win-predict-ai-ui`)
+        - label: icons (`win-predict-ai-icons`)
+        - label: data (`win-predict-ai-data`)
+        - label: app (`win-predict-ai`)
+        - label: admin (`win-predict-ai-admin`)
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Ограничения
+      description: Что нельзя трогать, какой стиль, дедлайн, зависимость от человека (выбор иконки, merge).
+      placeholder: Не менять семантические токены. Иконку выбираю сам в PR.
+  - type: textarea
+    id: done
+    attributes:
+      label: Критерий готовности
+      description: Проверяемые условия. Без этого оркестратор не знает, когда Goal → Done.
+      placeholder: |
+        - PR в затронутых репо зелёные
+        - Пакеты опубликованы и подтянуты в app/admin, если менялись ui/icons
+        - Коротко видно в UI / админке
+    validations:
+      required: true
