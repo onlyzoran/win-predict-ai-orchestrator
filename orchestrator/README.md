@@ -19,8 +19,8 @@ orchestrator/
 1. Local-агент на GitHub runner собирает план
 2. Child issues в рабочих репо + доска, Goal → **In Progress**
 3. Диспетчер:
-   - `slash` → комментарий `/ui-agent` или `/new-icon` (Automations в `cursor-cloud-agents`, не на VPS)
-   - `issue_only` / `sdk` → `Agent.create({ cloud: { env: { type: "machine", name: "win-predict-vps" }, repos } })` + `worker.md`
+   - `slash` → комментарий `/ui-agent` или `/new-icon`, **ждёт PR** (до 40 мин). Нет PR — без `DISPATCH_MARKER`, `/orchestrate` можно повторить
+   - `issue_only` / `sdk` → My Machines, строго **после** зависимостей и не параллельно с slash (один Cursor-прогон за раз; на VPS одна машина)
 4. Успешный `worker.md`: child и Goal → **Review**, комментарий «нужна приёмка» + URL PR. **Done** и merge — человек.
 
 Если план уже есть, повторный `/orchestrate` только догоняет воркеров (не плодит issues). С нуля: `/orchestrate redo`. Ошибка старта воркера **не** ставит `DISPATCH_MARKER` на Goal — `/orchestrate` можно повторить.

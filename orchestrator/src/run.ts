@@ -17,6 +17,8 @@ const STATUS_OPTION_ID = {
 const PLAN_MARKER = "<!-- orchestrator-plan -->";
 const DISPATCH_MARKER = "<!-- orchestrator-dispatch -->";
 const MACHINE_NAME = process.env.CURSOR_MACHINE_NAME?.trim() || "win-predict-vps";
+const SLASH_WAIT_MS = 40 * 60 * 1000;
+const SLASH_POLL_MS = 20_000;
 const REPOS = [
   "onlyzoran/win-predict-ai-ui",
   "onlyzoran/win-predict-ai-icons",
@@ -130,8 +132,37 @@ function extractStoredPlan(comments: Array<{ body: string }>, goalNumber: number
 }
 
 function childAlreadyDispatched(url: string, token: string): boolean {
-  const { repo, number } = parseIssueUrl(url);
-  return listIssueComments(repo, number, token).some((c) => c.body.includes(DISPATCH_MARKER));
+  return findOpenPrsForIssue(url, token).length > 0;
+}
+
+function findOpenPrsForIssue(issueUrl: string, token: string): string[] {
+  const { repo, number } = parseIssueUrl(issueUrl);
+  const raw = gh(
+    ["pr", "list", "-R", repo, "--state", "open", "--limit", "30", "--json", "url,body,title"],
+    token,
+  );
+  const items = JSON.parse(raw) as Array<{ url: string; body: string; title: string }>;
+  const closeRe = new RegExp(`(?:closes|fixes|resolves)\\s+#${number}\\b`, "i");
+  const issueRe = new RegExp(`github\\.com/${repo}/issues/${number}\\b`, "i");
+  return items
+    .filter((pr) => closeRe.test(pr.body || "") || closeRe.test(pr.title || "") || issueRe.test(pr.body || ""))
+    .map((pr) => pr.url);
+}
+
+async function waitForOpenPr(issueUrl: string, token: string, timeoutMs: number): Promise<string[]> {
+  const started = Date.now();
+  for (;;) {
+    const prs = findOpenPrsForIssue(issueUrl, token);
+    if (prs.length) return prs;
+    if (Date.now() - started >= timeoutMs) {
+      throw new Error(
+        `slash-воркер не открыл PR за ${Math.round(timeoutMs / 60000)} мин (часто rate limit). Повтор: \`/orchestrate\`.`,
+      );
+    }
+    const left = Math.round((timeoutMs - (Date.now() - started)) / 1000);
+    console.log(`wait PR ${issueUrl} (${left}s left)`);
+    await new Promise((resolve) => setTimeout(resolve, SLASH_POLL_MS));
+  }
 }
 
 function extractJson(text: string): unknown {
@@ -458,16 +489,28 @@ async function dispatchTask(
 ): Promise<string> {
   const { repo, number } = parseIssueUrl(issueUrl);
   if (!force && childAlreadyDispatched(issueUrl, token)) {
-    return `${issueUrl} — уже запускали`;
+    const prs = findOpenPrsForIssue(issueUrl, token);
+    const prNote = prs.length ? ` — ${prs.join(" ")}` : "";
+    return `${issueUrl} — уже запускали${prNote}`;
   }
   if (task.trigger.type === "slash") {
+    addToProject(issueUrl, "In Progress", token);
+    commentOnIssue(repo, number, task.trigger.command, token);
+    const prUrls = await waitForOpenPr(issueUrl, token, SLASH_WAIT_MS);
+    addToProject(issueUrl, "Review", token);
     commentOnIssue(
       repo,
       number,
-      `${DISPATCH_MARKER}\n${task.trigger.command}`,
+      [
+        DISPATCH_MARKER,
+        `Slash \`${task.trigger.command}\` открыл PR.`,
+        "",
+        "**Нужна приёмка** — колонка Review. Merge сам, воркер не мержит.",
+        ...prUrls.map((url) => `- ${url}`),
+      ].join("\n"),
       token,
     );
-    return `${issueUrl} — \`${task.trigger.command}\``;
+    return `${issueUrl} — \`${task.trigger.command}\` — ${prUrls.join(" ")}`;
   }
   const { runId, prUrls } = await runMachineWorker(task, issueUrl, token);
   const prNote = prUrls.length ? ` — ${prUrls.join(" ")}` : "";
@@ -491,6 +534,19 @@ async function dispatchPlan(
       continue;
     }
     try {
+      if (task.depends_on.length) {
+        const unmet = task.depends_on.filter((id) => {
+          const depTask = plan.tasks.find((t) => t.id === id);
+          const depUrl =
+            created.get(id) ??
+            (depTask ? findExistingChild(depTask, plan.goal_number, token) : undefined);
+          return !depUrl || findOpenPrsForIssue(depUrl, token).length === 0;
+        });
+        if (unmet.length) {
+          notes.push(`${url} — ошибка: нет PR у ${unmet.join(", ")}`);
+          continue;
+        }
+      }
       notes.push(await dispatchTask(task, url, token, force));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -557,7 +613,7 @@ function loadEvent(): IssueCommentEvent {
 function commentDispatch(goalNumber: number, goalUrl: string, notes: string[], token: string): boolean {
   const failed = notes.some((n) => n.includes("ошибка") || n.includes("нет child"));
   const allSkipped = notes.length > 0 && notes.every((n) => n.includes("уже запускали"));
-  const machineDone = notes.some((n) => n.includes(" — machine "));
+  const machineDone = notes.some((n) => /\/pull\/\d+/.test(n) || n.includes(" — machine "));
   const toReview = Boolean(token) && !failed && !allSkipped && machineDone;
   if (toReview) addToProject(goalUrl, "Review", token);
   const prefix = failed
