@@ -1,0 +1,19 @@
+{
+  "name": "win-predict-ai-orchestrator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "orchestrate": "tsx orchestrator/src/run.ts"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.28",
+    "tsx": "^4.23.12"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}

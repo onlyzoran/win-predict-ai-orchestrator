@@ -18,7 +18,7 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 Контракт цели: [docs/goal-contract.md](docs/goal-contract.md). Новый Goal — шаблон **Goal**. Старт: комментарий `/orchestrate`.
 
-Скелет менеджера: [orchestrator/](orchestrator/) — промпт, JSON-план, маршруты по пяти репо.
+Скелет и Action: [orchestrator/](orchestrator/). Нужны секреты `CURSOR_API_KEY` и `ORCHESTRATOR_GITHUB_TOKEN` (см. [orchestrator/README.md](orchestrator/README.md)).
 
 ## Project
 
@@ -28,4 +28,4 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 ## Статус
 
-Контракт Goal Issue заведён, скелет менеджера в [orchestrator/](orchestrator/). Дальше: Action `/orchestrate` (создание child issues по плану).
+Action `/orchestrate` создаёт child issues по плану. Воркеров пока не запускает.

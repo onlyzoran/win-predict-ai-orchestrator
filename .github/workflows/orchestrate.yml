@@ -1,0 +1,34 @@
+name: orchestrate
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: orchestrate-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  orchestrate:
+    if: >-
+      github.event.issue.pull_request == null &&
+      contains(github.event.comment.body, '/orchestrate')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Decompose Goal and open child issues
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          ORCHESTRATOR_GITHUB_TOKEN: ${{ secrets.ORCHESTRATOR_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run orchestrate

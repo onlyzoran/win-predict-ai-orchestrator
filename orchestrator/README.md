@@ -1,26 +1,39 @@
 # Оркестратор
 
-Менеджер читает Goal Issue и возвращает план. Диспетчер (ещё нет) создаст child issues и позже триггернет воркеров.
+Менеджер читает Goal Issue и возвращает JSON-план. Диспетчер в GitHub Action создаёт child issues.
 
 ```
 orchestrator/
-  prompts/manager.md      # инструкции менеджера
-  schema/plan.schema.json # контракт плана
+  prompts/manager.md
+  schema/plan.schema.json
   schema/plan.example.json
+  src/run.ts                 # Action /orchestrate
 ```
 
-Код SDK и GitHub Action `/orchestrate` появятся следующим шагом. Сейчас можно вручную: открыть Goal, скормить менеджеру тело issue, проверить JSON по схеме.
+## `/orchestrate`
+
+Комментарий `/orchestrate` на Goal Issue (лейбл `goal`):
+
+1. Cloud-агент (Cursor SDK) собирает план по промпту менеджера
+2. Диспетчер создаёт child issues в рабочих репо, ставит лейблы поверхностей
+3. Goal и children попадают на доску; Goal → **In Progress**
+4. Воркеров (`/ui-agent`, `/new-icon`) пока не запускает
+
+Повтор: `/orchestrate redo`.
+
+## Секреты репо
+
+| Secret | Зачем |
+|---|---|
+| `CURSOR_API_KEY` | вызов менеджера ([Integrations](https://cursor.com/dashboard/integrations)) |
+| `ORCHESTRATOR_GITHUB_TOKEN` | PAT: scopes `repo` + `project`, доступ ко всем шести репо семьи |
+
+В Cursor Dashboard этот GitHub-аккаунт должен иметь доступ к `win-predict-ai-orchestrator` (cloud agent клонирует репо).
 
 ## Модули
 
-| Модуль | Сейчас | Потом |
-|---|---|---|
-| decompose | промпт + JSON-схема | вызов модели / cloud agent |
-| dispatch | — | создать child issues, лейблы, комментарий к Goal |
-| watch | — | PR/CI, колонки Project, `/ui-agent` и `/new-icon` |
-
-## План
-
-Поля и enum'ы — в схеме. Пример — `schema/plan.example.json`.
-
-`parallel_group`: меньшее раньше, одинаковое можно параллельно. `depends_on` — id задач, не номера GitHub issue.
+| Модуль | Сейчас |
+|---|---|
+| decompose | `Agent.prompt` + схема |
+| dispatch | `gh issue create`, лейблы, Project |
+| watch | ещё нет — slash вручную |
