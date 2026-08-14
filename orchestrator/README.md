@@ -10,6 +10,7 @@ orchestrator/
   schema/plan.example.json
   src/run.ts
   ops/cursor-worker.service  # systemd на VPS
+  prompts/design.md          # вкус и палитра для ui/app/admin
 ```
 
 ## `/orchestrate`

@@ -436,9 +436,18 @@ async function runMachineWorker(
   addToProject(issueUrl, "In Progress", token);
   await notifyTelegram(`My Machines старт: ${task.id}\n${issueUrl}`);
   const worker = readFileSync(join(ROOT, "orchestrator/prompts/worker.md"), "utf8");
+  const visual =
+    task.surface === "ui" ||
+    task.surface === "app" ||
+    task.surface === "admin" ||
+    /цвет|палитр|theme|токен|dark|light|контраст/i.test(`${task.title}\n${task.body}`);
+  const design = visual
+    ? readFileSync(join(ROOT, "orchestrator/prompts/design.md"), "utf8")
+    : "";
   const { repo, number } = parseIssueUrl(issueUrl);
   const prompt = [
     worker,
+    design ? `\n${design}\n` : "",
     "",
     `Репозиторий: ${task.repo}`,
     `Child issue: ${issueUrl}`,
