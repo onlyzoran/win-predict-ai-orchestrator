@@ -22,6 +22,10 @@ const MACHINE_NAME = process.env.CURSOR_MACHINE_NAME?.trim() || "win-predict-vps
 const SLASH_WAIT_MS = 40 * 60 * 1000;
 const SLASH_POLL_MS = 20_000;
 const CLAIM_WAIT_MS = 15_000;
+const GH_RETRY = 5;
+const GH_RETRY_MS = 8_000;
+const TG_ERROR_STAMP = "/tmp/orchestrator-watch-tg-error";
+const TG_ERROR_COOLDOWN_MS = 20 * 60 * 1000;
 const REPOS = [
   "onlyzoran/win-predict-ai-ui",
   "onlyzoran/win-predict-ai-icons",
@@ -122,6 +126,42 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function isTransientGithub(text: string): boolean {
+  return /HTTP 502|HTTP 503|HTTP 429|No server is currently available|secondary rate limit|Something went wrong while executing your query/i.test(
+    text,
+  );
+}
+
+function shouldNotifyWatchError(message: string): boolean {
+  if (!isTransientGithub(message)) return true;
+  const fingerprint = `${Date.now()}\n${message.slice(0, 200)}`;
+  try {
+    const prev = readFileSync(TG_ERROR_STAMP, "utf8");
+    const nl = prev.indexOf("\n");
+    const at = Number(prev.slice(0, nl >= 0 ? nl : undefined));
+    const last = nl >= 0 ? prev.slice(nl + 1) : "";
+    if (
+      Number.isFinite(at) &&
+      Date.now() - at < TG_ERROR_COOLDOWN_MS &&
+      last === message.slice(0, 200)
+    ) {
+      return false;
+    }
+  } catch {
+    /* first error */
+  }
+  try {
+    writeFileSync(TG_ERROR_STAMP, fingerprint);
+  } catch {
+    /* /tmp busy — всё равно напишем в чат */
+  }
+  return true;
+}
+
 async function notifyTelegram(text: string): Promise<void> {
   const bot = process.env.TELEGRAM_BOT_TOKEN?.trim();
   const chat = process.env.TELEGRAM_CHAT_ID?.trim();
@@ -145,14 +185,20 @@ async function notifyTelegram(text: string): Promise<void> {
 }
 
 function gh(args: string[], token: string): string {
-  const result = spawnSync("gh", args, {
-    encoding: "utf8",
-    env: { ...process.env, GH_TOKEN: token, GITHUB_TOKEN: token },
-  });
-  if (result.status !== 0) {
-    throw new Error((result.stderr || result.stdout || `gh ${args.join(" ")}`).trim());
+  let last = "";
+  for (let attempt = 1; attempt <= GH_RETRY; attempt++) {
+    const result = spawnSync("gh", args, {
+      encoding: "utf8",
+      env: { ...process.env, GH_TOKEN: token, GITHUB_TOKEN: token },
+    });
+    if (result.status === 0) return (result.stdout || "").trim();
+    last = (result.stderr || result.stdout || `gh ${args.join(" ")}`).trim();
+    if (!isTransientGithub(last) || attempt === GH_RETRY) throw new Error(last);
+    const waitMs = GH_RETRY_MS * attempt;
+    console.warn(`gh retry ${attempt}/${GH_RETRY} in ${waitMs}ms: ${last.slice(0, 200)}`);
+    sleepSync(waitMs);
   }
-  return (result.stdout || "").trim();
+  throw new Error(last);
 }
 
 function commentOnGoal(issueNumber: number, body: string): void {
@@ -1165,7 +1211,12 @@ async function watchBoard(): Promise<void> {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await notifyTelegram(`board-watch ошибка\n${message.slice(0, 500)}`);
+    if (shouldNotifyWatchError(message)) {
+      const hint = isTransientGithub(message) ? "\nGitHub недоступен, повторю сам." : "";
+      await notifyTelegram(`board-watch ошибка\n${message.slice(0, 500)}${hint}`);
+    } else {
+      console.warn(`telegram skip (тот же GitHub сбой): ${message.slice(0, 200)}`);
+    }
     throw err;
   }
 }
