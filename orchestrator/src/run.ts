@@ -1220,8 +1220,7 @@ async function watchBoard(): Promise<void> {
       (item) => item.status === "In Progress" && !item.closed,
     );
     const remaining = afterGoals.filter((item) => isRepo(item.repo));
-    const queue = remaining.length ? remaining : children;
-    for (const child of queue) {
+    for (const child of remaining) {
       await handleChildFromBoard(child, token);
     }
   } catch (err) {
