@@ -11,7 +11,8 @@ fi
 
 lock_before="$(git rev-parse HEAD:package-lock.json 2>/dev/null || true)"
 if [[ -n "${ORCHESTRATOR_GITHUB_TOKEN:-}" ]]; then
-  git -c "http.extraheader=AUTHORIZATION: bearer ${ORCHESTRATOR_GITHUB_TOKEN}" fetch origin
+  basic="$(printf 'x-access-token:%s' "$ORCHESTRATOR_GITHUB_TOKEN" | openssl base64 -A)"
+  git -c "http.extraheader=AUTHORIZATION: basic ${basic}" fetch origin
 else
   git fetch origin
 fi
