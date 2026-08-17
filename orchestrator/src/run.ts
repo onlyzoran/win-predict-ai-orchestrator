@@ -18,6 +18,7 @@ const PLAN_MARKER = "<!-- orchestrator-plan -->";
 const DISPATCH_MARKER = "<!-- orchestrator-dispatch -->";
 const STATE_RE = /<!-- orchestrator-state:(.*?) -->/;
 const WORKING_STALE_MS = 3 * 60 * 60 * 1000;
+const RESOURCE_BACKOFF_MS = 15 * 60 * 1000;
 const MACHINE_NAME = process.env.CURSOR_MACHINE_NAME?.trim() || "win-predict-vps";
 const SLASH_WAIT_MS = 40 * 60 * 1000;
 const SLASH_POLL_MS = 20_000;
@@ -282,8 +283,21 @@ function notesAfterLastPhase(comments: IssueComment[], phase: DispatchPhase): st
     .join("\n\n---\n\n");
 }
 
+function isResourceBackoff(state: DispatchState | undefined, comments: IssueComment[]): boolean {
+  if (state?.phase !== "error") return false;
+  const lastError = [...comments].reverse().find((comment) => parseDispatchState(comment.body)?.phase === "error");
+  if (!lastError || !/resource_exhausted/i.test(lastError.body)) return false;
+  if (!state.at) return true;
+  const at = Date.parse(state.at);
+  return !Number.isNaN(at) && Date.now() - at < RESOURCE_BACKOFF_MS;
+}
+
 function shouldWakeChild(state: DispatchState | undefined, comments: IssueComment[]): boolean {
-  if (state?.phase === "review" || state?.phase === "error") return true;
+  if (state?.phase === "error") {
+    if (isResourceBackoff(state, comments)) return false;
+    return true;
+  }
+  if (state?.phase === "review") return true;
   if (state?.phase === "working") {
     if (notesAfterLastPhase(comments, "working")) return true;
     return !isActiveWorking(state);
@@ -886,7 +900,7 @@ async function dispatchPlan(
       continue;
     }
     try {
-      if (task.depends_on.length && opts.skipIfOpenPr !== false) {
+      if (task.depends_on.length) {
         const unmet = task.depends_on.filter((id) => {
           const depTask = plan.tasks.find((t) => t.id === id);
           const depUrl =
@@ -895,7 +909,7 @@ async function dispatchPlan(
           return !depUrl || findOpenPrsForIssue(depUrl, token).length === 0;
         });
         if (unmet.length) {
-          notes.push(`${url} — ошибка: нет PR у ${unmet.join(", ")}`);
+          notes.push(`${url} — жду PR у ${unmet.join(", ")}`);
           continue;
         }
       }
@@ -903,6 +917,12 @@ async function dispatchPlan(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(err);
+      const prs = findOpenPrsForIssue(url, token);
+      if (prs.length && isRetryableWorkerStart(err)) {
+        notes.push(`${url} — квота Cursor, PR на месте ${prs.join(" ")}`);
+        await notifyTelegram(`Квота Cursor, PR уже есть: ${task.id}\n${prs.join("\n")}`);
+        continue;
+      }
       notes.push(`${url} — ошибка: ${message}`);
       await notifyTelegram(`Ошибка воркера: ${task.id}\n${url}\n${message.slice(0, 500)}`);
       try {
@@ -1150,6 +1170,10 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   }
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
+  if (isResourceBackoff(state, comments)) {
+    console.log(`skip goal #${item.number}: resource_exhausted backoff`);
+    return;
+  }
   if (isActiveWorking(state) && !notesAfterLastPhase(comments, "working")) {
     console.log(`skip goal #${item.number}: already working`);
     return;
