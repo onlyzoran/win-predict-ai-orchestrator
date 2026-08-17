@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "orchestrate": "tsx orchestrator/src/run.ts"
+    "orchestrate": "tsx orchestrator/src/run.ts",
+    "watch": "tsx orchestrator/src/run.ts watch"
   },
   "engines": {
     "node": ">=22.13"

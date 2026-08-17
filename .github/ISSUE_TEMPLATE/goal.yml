@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Цель живёт только здесь. После `/orchestrate` оркестратор создаст child issues
-        в `ui` / `icons` / `data` / `app` / `admin`.
+        Цель живёт только здесь. Карточка Inbox → In Progress (или комментарий `/orchestrate`) — оркестратор создаст child issues
+        в `ui` / `icons` / `data` / `app` / `admin`. Правки после Review: комментарий в этот issue и карточка снова In Progress.
   - type: textarea
     id: outcome
     attributes:

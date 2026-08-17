@@ -5,7 +5,7 @@
 ```
 orchestrator/
   prompts/manager.md
-  prompts/worker.md          # общий исполнитель (app/admin/data) на My Machines
+  prompts/worker.md          # исполнитель ui/app/admin/data на My Machines
   schema/plan.schema.json
   schema/plan.example.json
   src/run.ts
@@ -13,18 +13,18 @@ orchestrator/
   prompts/design.md          # вкус и палитра для ui/app/admin
 ```
 
-## `/orchestrate`
+## `/orchestrate` и доска
 
-Комментарий `/orchestrate` на Goal Issue (лейбл `goal`):
+Комментарий `/orchestrate` на Goal Issue (лейбл `goal`) — запасной старт. Основной жест: карточка на доске.
 
-1. Local-агент на GitHub runner собирает план
-2. Child issues в рабочих репо + доска, Goal → **In Progress**
-3. Диспетчер:
+1. Goal **Inbox → In Progress** (или `/orchestrate`): local-агент на GitHub runner собирает план, child issues, Goal → **In Progress**, воркеры.
+2. Диспетчер:
    - `slash` `/new-icon` → комментарий, **ждёт PR**
-   - `/ui-agent` из плана и `sdk` / `issue_only` → My Machines `win-predict-vps` (не Cursor Automation: иначе Rate limited)
-4. Успешный `worker.md`: child и Goal → **Review**, комментарий «нужна приёмка» + URL PR. **Done** и merge — человек.
+   - `ui` / `sdk` → My Machines `win-predict-vps` (`worker.md`)
+3. Успех: child и Goal → **Review**. **Done** и merge — человек.
+4. Правка: комментарий в **issue** (не в PR) и карточка **Review → In Progress**. Action `board-watch` (cron 2 мин) поднимает Goal → оркестратор или child → воркер MODE B (та же ветка PR).
 
-Если план уже есть, повторный `/orchestrate` только догоняет воркеров (не плодит issues). С нуля: `/orchestrate redo`. Ошибка старта воркера **не** ставит `DISPATCH_MARKER` на Goal — `/orchestrate` можно повторить.
+Если план уже есть, повторный `/orchestrate` только догоняет воркеров (не плодит issues). С нуля: `/orchestrate redo`. Ошибка старта воркера **не** ставит `DISPATCH_MARKER` на Goal — `/orchestrate` или возврат в In Progress можно повторить.
 
 ## Секреты репо
 
@@ -41,7 +41,7 @@ orchestrator/
 
 Не Cursor-hosted VM и не Self-Hosted Pool (`--pool`). Worker-процесс на VPS, модель в Cursor.
 
-- Клоны: `/opt/cursor-workers/{win-predict-ai,win-predict-ai-admin,win-predict-ai-data}`
+- Клоны: `/opt/cursor-workers/{win-predict-ai,win-predict-ai-admin,win-predict-ai-data,win-predict-ai-ui}`
 - Прод админки `/var/www/win-predict-ai-admin` не монтировать в `--worker-dir`
 - Юнит: `orchestrator/ops/cursor-worker.service`
 - Проверка: `agent worker debug`, машина в [cursor.com/agents](https://cursor.com/agents)
@@ -51,5 +51,5 @@ orchestrator/
 | Модуль | Сейчас |
 |---|---|
 | decompose | local `Agent.prompt` |
-| dispatch | issues + slash или My Machines `worker.md` |
-| watch | после `worker.md` — колонка Review; Done и merge вручную |
+| dispatch | issues + slash `/new-icon` или My Machines `worker.md` |
+| watch | cron по доске: In Progress после Review → оркестратор или воркер; Done и merge вручную |

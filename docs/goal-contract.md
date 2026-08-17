@@ -16,7 +16,9 @@ Goal — одна высокоуровневая цель. Живёт тольк
 
 Лейбл `goal` ставит шаблон. Лейблы поверхностей (`ui`, `icons`, `data`, `app`, `admin`) оркестратор допишет после плана; вручную можно сразу.
 
-Старт прогона: комментарий `/orchestrate` к Goal Issue. Повтор с новыми child issues: `/orchestrate redo`.
+Старт: карточка Goal **Inbox → In Progress** (или комментарий `/orchestrate`). Повтор с новыми child issues: `/orchestrate redo`.
+
+Правки после Review: комментарий **в issue** (Goal или child) и карточка **Review → In Progress**. Комментарий без смены колонки — только заметка, агент не стартует.
 
 ## Лейблы
 
@@ -36,14 +38,14 @@ Goal — одна высокоуровневая цель. Живёт тольк
 | Колонка | Кто двигает | Значение |
 |---|---|---|
 | Inbox | человек | цель записана, оркестратор ещё не брал |
-| In Progress | оркестратор | план есть, воркер работает |
-| Review | оркестратор | PR сдан, нужна приёмка (замечания в PR, merge сам) |
-| Done | человек или оркестратор | критерий готовности выполнен |
+| In Progress | человек или оркестратор | человек просит работу (первый раз или правка); оркестратор/воркер исполняет |
+| Review | оркестратор | PR сдан. Замечания — в issue, карточку верни в In Progress. Merge сам |
+| Done | человек | критерий готовности выполнен, PR смержен |
 
 Черновики и идеи без шаблона в Project не кладём.
 
 ## Child issues
 
-Одно child issue — один рабочий репо. Диспетчер после плана запускает воркера: `/ui-agent`, `/new-icon`, или My Machines `worker.md` для app/admin/data.
+Одно child issue — один рабочий репо. Диспетчер после плана запускает воркера: My Machines `worker.md` (ui/app/admin/data) или slash `/new-icon`. Правки — issue + колонка In Progress, не комментарий в PR.
 
 Как режется цель: [orchestrator/prompts/manager.md](../orchestrator/prompts/manager.md). Форма плана: [orchestrator/schema/plan.schema.json](../orchestrator/schema/plan.schema.json).

@@ -8,15 +8,15 @@
 
 | Репо | Роль |
 |---|---|
-| [`win-predict-ai-ui`](https://github.com/onlyzoran/win-predict-ai-ui) | воркер UI (`/ui-agent`) |
-| [`win-predict-ai-icons`](https://github.com/onlyzoran/win-predict-ai-icons) | воркер иконок (`/new-icon`) |
+| [`win-predict-ai-ui`](https://github.com/onlyzoran/win-predict-ai-ui) | shared Vue UI (My Machines `worker.md`) |
+| [`win-predict-ai-icons`](https://github.com/onlyzoran/win-predict-ai-icons) | воркер иконок (`/new-icon`, правки через issue) |
 | [`win-predict-ai-data`](https://github.com/onlyzoran/win-predict-ai-data) | воркер данных |
 | [`win-predict-ai`](https://github.com/onlyzoran/win-predict-ai) | потребитель (Vue app) |
 | [`win-predict-ai-admin`](https://github.com/onlyzoran/win-predict-ai-admin) | потребитель (admin) |
 
 Goal Issues — в этом репо. Child issues — в таблице выше.
 
-Контракт цели: [docs/goal-contract.md](docs/goal-contract.md). Новый Goal — шаблон **Goal**. Старт: комментарий `/orchestrate`.
+Контракт цели: [docs/goal-contract.md](docs/goal-contract.md). Новый Goal — шаблон **Goal**. Старт: карточка **Inbox → In Progress** (запасной путь — `/orchestrate`). Правки: комментарий в issue и **Review → In Progress**.
 
 Скелет и Action: [orchestrator/](orchestrator/). Нужны секреты `CURSOR_API_KEY` и `ORCHESTRATOR_GITHUB_TOKEN` (см. [orchestrator/README.md](orchestrator/README.md)).
 
@@ -28,4 +28,4 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 ## Статус
 
-Action `/orchestrate` создаёт child issues и запускает воркеров (`slash` или My Machines `worker.md` на VPS `win-predict-vps`). После успешного `worker.md` карточки Goal и child → **Review**.
+Action `board-watch` (раз в 2 мин) видит карточки **In Progress** и будит оркестратор (Goal) или воркера (child). `/orchestrate` остаётся запасным стартом. После сдачи карточки → **Review**. Замечания пиши в issue и верни карточку в In Progress.
