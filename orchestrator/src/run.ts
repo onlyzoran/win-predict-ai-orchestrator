@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,10 @@ const STATE_RE = /<!-- orchestrator-state:(.*?) -->/;
 const WORKING_STALE_MS = 3 * 60 * 60 * 1000;
 const RESOURCE_BACKOFF_MS = 15 * 60 * 1000;
 const MACHINE_NAME = process.env.CURSOR_MACHINE_NAME?.trim() || "win-predict-vps";
+const MACHINE_SLOTS = 1;
+const INVENTORY_PATH =
+  process.env.ORCHESTRATOR_INVENTORY?.trim() ||
+  join(process.env.HOME || tmpdir(), "data", "inventory.json");
 const SLASH_WAIT_MS = 40 * 60 * 1000;
 const SLASH_POLL_MS = 20_000;
 const CLAIM_WAIT_MS = 15_000;
@@ -116,6 +120,28 @@ type BoardIssue = {
 
 type OpenPr = { url: string; headRefName: string };
 
+type InventoryStatus = "starting" | "running" | "retry" | "review" | "error" | "quota";
+
+type InventoryRun = {
+  taskId: string;
+  issueUrl: string;
+  status: InventoryStatus;
+  attempt: number;
+  startedAt: string;
+  agentId?: string;
+  runId?: string;
+  prUrls?: string[];
+  detail?: string;
+};
+
+type Inventory = {
+  machine: string;
+  slots: number;
+  updatedAt: string;
+  active: InventoryRun[];
+  last?: InventoryRun & { endedAt: string };
+};
+
 function commentToken(): string {
   return process.env.GITHUB_TOKEN || process.env.ORCHESTRATOR_GITHUB_TOKEN || "";
 }
@@ -183,6 +209,98 @@ async function notifyTelegram(text: string): Promise<void> {
     }
   } catch (err) {
     console.warn(`telegram: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function emptyInventory(): Inventory {
+  return {
+    machine: MACHINE_NAME,
+    slots: MACHINE_SLOTS,
+    updatedAt: new Date().toISOString(),
+    active: [],
+  };
+}
+
+function readInventory(): Inventory {
+  try {
+    const parsed = JSON.parse(readFileSync(INVENTORY_PATH, "utf8")) as Inventory;
+    if (!parsed || !Array.isArray(parsed.active)) return emptyInventory();
+    return {
+      machine: MACHINE_NAME,
+      slots: MACHINE_SLOTS,
+      updatedAt: parsed.updatedAt || new Date().toISOString(),
+      active: parsed.active,
+      last: parsed.last,
+    };
+  } catch {
+    return emptyInventory();
+  }
+}
+
+function writeInventory(inventory: Inventory): Inventory {
+  const cutoff = Date.now() - WORKING_STALE_MS;
+  inventory.active = inventory.active.filter((run) => {
+    const started = Date.parse(run.startedAt);
+    return Number.isNaN(started) || started > cutoff;
+  });
+  inventory.machine = MACHINE_NAME;
+  inventory.slots = MACHINE_SLOTS;
+  inventory.updatedAt = new Date().toISOString();
+  mkdirSync(dirname(INVENTORY_PATH), { recursive: true });
+  const tmp = `${INVENTORY_PATH}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(inventory, null, 2)}\n`);
+  renameSync(tmp, INVENTORY_PATH);
+  return inventory;
+}
+
+function formatRunAge(startedAt: string): string {
+  const started = Date.parse(startedAt);
+  if (Number.isNaN(started)) return "?";
+  const minutes = Math.max(0, Math.round((Date.now() - started) / 60_000));
+  return minutes < 1 ? "<1м" : `${minutes}м`;
+}
+
+function formatInventorySnapshot(inventory: Inventory, event: string): string {
+  const lines = [`${inventory.machine} слот ${inventory.active.length}/${inventory.slots}`, event];
+  if (inventory.active.length) {
+    for (const run of inventory.active) {
+      const attempt = run.attempt > 1 ? ` · попытка ${run.attempt}/4` : "";
+      lines.push(`${run.status} · ${run.taskId} · ${formatRunAge(run.startedAt)}${attempt}`);
+      if (run.detail) lines.push(run.detail.slice(0, 300));
+      lines.push(run.issueUrl);
+    }
+  } else {
+    lines.push("свободно");
+    if (inventory.last) {
+      lines.push(`последний: ${inventory.last.taskId} · ${inventory.last.status}`);
+      if (inventory.last.prUrls?.length) lines.push(inventory.last.prUrls.join("\n"));
+      else lines.push(inventory.last.issueUrl);
+    }
+  }
+  return lines.join("\n");
+}
+
+async function publishActiveRun(run: InventoryRun, event: string): Promise<void> {
+  try {
+    const inventory = readInventory();
+    inventory.active = inventory.active.filter((item) => item.issueUrl !== run.issueUrl);
+    inventory.active.push(run);
+    writeInventory(inventory);
+    await notifyTelegram(formatInventorySnapshot(inventory, event));
+  } catch (err) {
+    console.warn(`inventory: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+async function closeActiveRun(run: InventoryRun, event: string): Promise<void> {
+  try {
+    const inventory = readInventory();
+    inventory.active = inventory.active.filter((item) => item.issueUrl !== run.issueUrl);
+    inventory.last = { ...run, endedAt: new Date().toISOString() };
+    writeInventory(inventory);
+    await notifyTelegram(formatInventorySnapshot(inventory, event));
+  } catch (err) {
+    console.warn(`inventory: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -729,7 +847,14 @@ async function runMachineWorker(
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
   addToProject(issueUrl, "In Progress", token);
-  await notifyTelegram(`My Machines старт: ${task.id}\n${issueUrl}`);
+  const occupancy: InventoryRun = {
+    taskId: task.id,
+    issueUrl,
+    status: "starting",
+    attempt: 1,
+    startedAt: new Date().toISOString(),
+  };
+  await publishActiveRun(occupancy, "старт");
   const worker = readFileSync(join(ROOT, "orchestrator/prompts/worker.md"), "utf8");
   const visual =
     task.surface === "ui" ||
@@ -769,73 +894,88 @@ async function runMachineWorker(
 
   const attempts = 4;
   let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    try {
-      await using agent = await Agent.create({
-        apiKey,
-        model: { id: "composer-2.5" },
-        cloud: {
-          env: { type: "machine", name: MACHINE_NAME },
-          repos: [{ url: `https://github.com/${repo}`, startingRef: headRef }],
-          skipReviewerRequest: true,
-          envVars: { GH_TOKEN: token },
-        },
-      });
-      const run = await agent.send(prompt);
-      console.log(
-        `worker task=${task.id} mode=${mode} ref=${headRef} agent=${agent.agentId} run=${run.id} machine=${MACHINE_NAME} attempt=${attempt}`,
-      );
-      const result = await run.wait();
-      if (result.status !== "finished") {
-        throw new Error(result.error?.message || `run status ${result.status}`);
-      }
-      const summary = (result.result ?? "").trim().slice(0, 1500) || "(нет текста)";
-      const prUrls = extractPrUrls(summary);
-      if (mode === "B" && !prUrls.length) prUrls.push(openPrs[0].url);
-      addToProject(issueUrl, "Review", token);
-      const prLines = prUrls.length
-        ? prUrls.map((url) => `- ${url}`).join("\n")
-        : "- (URL PR в тексте воркера не найден)";
-      commentOnIssue(
-        repo,
-        number,
-        formatDispatchComment(
-          {
-            phase: "review",
-            agentId: agent.agentId,
-            runId: result.id,
-            prUrls,
-            headRef,
-            at: new Date().toISOString(),
+  try {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      occupancy.attempt = attempt;
+      try {
+        await using agent = await Agent.create({
+          apiKey,
+          model: { id: "composer-2.5" },
+          cloud: {
+            env: { type: "machine", name: MACHINE_NAME },
+            repos: [{ url: `https://github.com/${repo}`, startingRef: headRef }],
+            skipReviewerRequest: true,
+            envVars: { GH_TOKEN: token },
           },
-          [
-            `My Machines воркер завершился (\`${result.id}\`, agent \`${agent.agentId}\`, \`${MACHINE_NAME}\`, MODE ${mode}).`,
-            "",
-            "**Нужна приёмка.** Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам.",
-            prLines,
-            "",
-            summary,
-          ],
-        ),
-        token,
-      );
-      await notifyTelegram(
-        `My Machines готов: ${task.id}\n${prUrls.length ? prUrls.join("\n") : issueUrl}`,
-      );
-      return { runId: result.id, prUrls, agentId: agent.agentId, headRef };
-    } catch (err) {
-      lastError = err;
-      if (!isRetryableWorkerStart(err) || attempt === attempts) throw err;
-      const waitMs = 30_000 * attempt;
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`worker ${task.id} start failed, retry ${attempt}/${attempts} in ${waitMs}ms: ${message}`);
-      await notifyTelegram(
-        `My Machines повтор ${attempt}/${attempts}: ${task.id}\n${issueUrl}\n${message.slice(0, 400)}`,
-      );
-      await sleep(waitMs);
+        });
+        const run = await agent.send(prompt);
+        occupancy.status = "running";
+        occupancy.agentId = agent.agentId;
+        occupancy.runId = run.id;
+        occupancy.detail = undefined;
+        await publishActiveRun(occupancy, "слот занят");
+        console.log(
+          `worker task=${task.id} mode=${mode} ref=${headRef} agent=${agent.agentId} run=${run.id} machine=${MACHINE_NAME} attempt=${attempt}`,
+        );
+        const result = await run.wait();
+        if (result.status !== "finished") {
+          throw new Error(result.error?.message || `run status ${result.status}`);
+        }
+        const summary = (result.result ?? "").trim().slice(0, 1500) || "(нет текста)";
+        const prUrls = extractPrUrls(summary);
+        if (mode === "B" && !prUrls.length) prUrls.push(openPrs[0].url);
+        addToProject(issueUrl, "Review", token);
+        const prLines = prUrls.length
+          ? prUrls.map((url) => `- ${url}`).join("\n")
+          : "- (URL PR в тексте воркера не найден)";
+        commentOnIssue(
+          repo,
+          number,
+          formatDispatchComment(
+            {
+              phase: "review",
+              agentId: agent.agentId,
+              runId: result.id,
+              prUrls,
+              headRef,
+              at: new Date().toISOString(),
+            },
+            [
+              `My Machines воркер завершился (\`${result.id}\`, agent \`${agent.agentId}\`, \`${MACHINE_NAME}\`, MODE ${mode}).`,
+              "",
+              "**Нужна приёмка.** Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам.",
+              prLines,
+              "",
+              summary,
+            ],
+          ),
+          token,
+        );
+        occupancy.status = "review";
+        occupancy.runId = result.id;
+        occupancy.prUrls = prUrls;
+        await closeActiveRun(occupancy, "готов");
+        return { runId: result.id, prUrls, agentId: agent.agentId, headRef };
+      } catch (err) {
+        lastError = err;
+        if (!isRetryableWorkerStart(err) || attempt === attempts) throw err;
+        const waitMs = 30_000 * attempt;
+        const message = err instanceof Error ? err.message : String(err);
+        occupancy.status = "retry";
+        occupancy.detail = message.slice(0, 400);
+        console.warn(`worker ${task.id} start failed, retry ${attempt}/${attempts} in ${waitMs}ms: ${message}`);
+        await publishActiveRun(occupancy, "повтор");
+        await sleep(waitMs);
+      }
     }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    occupancy.status = isRetryableWorkerStart(err) ? "quota" : "error";
+    occupancy.detail = message.slice(0, 400);
+    await closeActiveRun(occupancy, occupancy.status === "quota" ? "квота" : "ошибка");
+    throw err;
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function dispatchTask(
