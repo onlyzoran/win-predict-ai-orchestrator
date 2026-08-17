@@ -1,0 +1,12 @@
+[Unit]
+Description=Run board-watch every 2 minutes after the previous run finishes
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=board-watch.service
+
+[Install]
+WantedBy=timers.target

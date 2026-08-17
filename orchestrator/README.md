@@ -9,7 +9,8 @@ orchestrator/
   schema/plan.schema.json
   schema/plan.example.json
   src/run.ts
-  ops/cursor-worker.service  # systemd на VPS
+  ops/cursor-worker.service  # systemd: My Machines worker
+  ops/board-watch.timer      # systemd: доска Review → In Progress
   prompts/design.md          # вкус и палитра для ui/app/admin
 ```
 
@@ -22,7 +23,7 @@ orchestrator/
    - `slash` `/new-icon` → комментарий, **ждёт PR**
    - `ui` / `sdk` → My Machines `win-predict-vps` (`worker.md`)
 3. Успех: child и Goal → **Review**. **Done** и merge — человек.
-4. Правка: комментарий в **issue** (не в PR) и карточка **Review → In Progress**. Action `board-watch` (cron 2 мин) поднимает Goal → оркестратор или child → воркер MODE B (та же ветка PR).
+4. Правка: комментарий в **issue** (не в PR) и карточка **Review → In Progress**. Таймер `board-watch` на `win-predict-vps` (каждые 2 мин) поднимает Goal → оркестратор или child → воркер MODE B (та же ветка PR). Action `board-watch` — только ручной прогон.
 
 Если план уже есть, повторный `/orchestrate` только догоняет воркеров (не плодит issues). С нуля: `/orchestrate redo`. Ошибка старта воркера **не** ставит `DISPATCH_MARKER` на Goal — `/orchestrate` или возврат в In Progress можно повторить.
 
@@ -41,10 +42,10 @@ orchestrator/
 
 Не Cursor-hosted VM и не Self-Hosted Pool (`--pool`). Worker-процесс на VPS, модель в Cursor.
 
-- Клоны: `/opt/cursor-workers/{win-predict-ai,win-predict-ai-admin,win-predict-ai-data,win-predict-ai-ui}`
+- Клоны: `/opt/cursor-workers/{win-predict-ai,win-predict-ai-admin,win-predict-ai-data,win-predict-ai-ui,win-predict-ai-orchestrator}`
 - Прод админки `/var/www/win-predict-ai-admin` не монтировать в `--worker-dir`
-- Юнит: `orchestrator/ops/cursor-worker.service`
-- Проверка: `agent worker debug`, машина в [cursor.com/agents](https://cursor.com/agents)
+- Юниты: `cursor-worker.service`, `board-watch.timer` — см. [ops/README.md](ops/README.md)
+- Проверка: `agent worker debug`, `systemctl list-timers board-watch.timer`, машина в [cursor.com/agents](https://cursor.com/agents)
 
 ## Модули
 
@@ -52,4 +53,4 @@ orchestrator/
 |---|---|
 | decompose | local `Agent.prompt` |
 | dispatch | issues + slash `/new-icon` или My Machines `worker.md` |
-| watch | cron по доске: In Progress после Review → оркестратор или воркер; Done и merge вручную |
+| watch | systemd timer на VPS: In Progress после Review → оркестратор или воркер; Done и merge вручную |

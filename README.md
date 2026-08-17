@@ -28,4 +28,4 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 ## Статус
 
-Action `board-watch` (раз в 2 мин) видит карточки **In Progress** и будит оркестратор (Goal) или воркера (child). `/orchestrate` остаётся запасным стартом. После сдачи карточки → **Review**. Замечания пиши в issue и верни карточку в In Progress.
+Таймер `board-watch` на VPS раз в 2 мин видит карточки **In Progress** и будит оркестратор (Goal) или воркера (child). `/orchestrate` остаётся запасным стартом. После сдачи карточки → **Review**. Замечания пиши в issue и верни карточку в In Progress.

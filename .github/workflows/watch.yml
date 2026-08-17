@@ -1,8 +1,8 @@
 name: board-watch
 
+# Polling живёт на VPS (systemd timer board-watch.timer).
+# Этот workflow — только ручной прогон с ноутбука.
 on:
-  schedule:
-    - cron: "*/2 * * * *"
   workflow_dispatch:
 
 concurrency:
