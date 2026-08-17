@@ -12,7 +12,7 @@
 
 Таймер `board-watch.timer` раз в 2 минуты (после окончания прошлого прогона) смотрит доску: карточка Review → In Progress → оркестратор или воркер.
 
-GitHub Actions cron для этого не используем: короткий schedule там ненадёжен. Action `board-watch` остаётся только как ручной `workflow_dispatch`.
+GitHub Actions для опроса доски не используем: короткий schedule там ненадёжен, ручной workflow с ноутбука запускал бы второй вотчер параллельно с таймером. Если VPS молчит — `systemctl start board-watch.service`.
 
 ### Поставить один раз
 
