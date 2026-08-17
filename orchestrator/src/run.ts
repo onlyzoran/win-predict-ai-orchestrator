@@ -1369,6 +1369,8 @@ async function watchBoard(): Promise<void> {
     console.warn("telegram: нет TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID — в чат не пишу");
   }
   try {
+    const inventory = writeInventory(readInventory());
+    console.log(`inventory ${INVENTORY_PATH}: ${inventory.active.length}/${inventory.slots}`);
     const token = writeToken();
     if (!token) throw new Error("нет секрета ORCHESTRATOR_GITHUB_TOKEN");
     const items = listProjectIssues(token).filter(

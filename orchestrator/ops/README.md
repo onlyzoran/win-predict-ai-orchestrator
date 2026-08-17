@@ -47,4 +47,4 @@ journalctl -u board-watch.service -n 50 --no-pager
 
 В логе пустой доски: `watch: 0 goal, 0 child in In Progress`. Карточка в In Progress после Review: `watch: 1 child` (или `1 goal`) и дальше запуск воркера.
 
-Инвентарь слота (кто занял машину): `/opt/cursor-workers/data/inventory.json`. При смене слота тот же снимок уходит в Telegram (`слот 1/1` / `свободно`).
+Инвентарь слота (кто занял машину): `/opt/cursor-workers/data/inventory.json`. Файл появляется на тике вотчера (даже если слот свободен). При смене слота снимок уходит в Telegram (`слот 1/1` / `свободно`).
