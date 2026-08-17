@@ -110,6 +110,7 @@ type BoardIssue = {
   url: string;
   labels: string[];
   status: string;
+  closed: boolean;
 };
 
 type OpenPr = { url: string; headRefName: string };
@@ -550,7 +551,7 @@ function addToProject(url: string, status: keyof typeof STATUS_OPTION_ID, token:
 }
 
 function listProjectIssues(token: string): BoardIssue[] {
-  const query = `query($projectId:ID!){node(id:$projectId){...on ProjectV2{items(first:100){nodes{id fieldValues(first:20){nodes{...on ProjectV2ItemFieldSingleSelectValue{name field{...on ProjectV2SingleSelectField{id}}}}} content{__typename ...on Issue{number title body url repository{nameWithOwner} labels(first:20){nodes{name}}}}}}}}}`;
+  const query = `query($projectId:ID!){node(id:$projectId){...on ProjectV2{items(first:100){nodes{id fieldValues(first:20){nodes{...on ProjectV2ItemFieldSingleSelectValue{name field{...on ProjectV2SingleSelectField{id}}}}} content{__typename ...on Issue{number title body url state repository{nameWithOwner} labels(first:20){nodes{name}}}}}}}}}`;
   const data = graphql<{
     node: {
       items: {
@@ -562,6 +563,7 @@ function listProjectIssues(token: string): BoardIssue[] {
             title?: string;
             body?: string | null;
             url?: string;
+            state?: string;
             repository?: { nameWithOwner: string };
             labels?: { nodes: Array<{ name: string }> };
           } | null;
@@ -585,6 +587,7 @@ function listProjectIssues(token: string): BoardIssue[] {
       url: content.url,
       labels: (content.labels?.nodes ?? []).map((label) => label.name),
       status,
+      closed: content.state === "CLOSED",
     });
   }
   return issues;
@@ -616,7 +619,7 @@ function findExistingChild(task: Task, goalNumber: number, token: string): strin
     token,
   );
   const items = JSON.parse(raw) as Array<{ url: string; title: string; body: string }>;
-  const marked = items.find((item) => item.body.includes(marker));
+  const marked = items.find((item) => item.body.includes(marker) && item.body.includes(parent));
   if (marked) return marked.url;
   const titled = items.find((item) => item.body.includes(parent) && item.title === task.title);
   if (titled) return titled.url;
@@ -1141,6 +1144,10 @@ function childWakeReason(state: DispatchState | undefined, comments: IssueCommen
 }
 
 async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<void> {
+  if (item.closed) {
+    console.log(`skip goal #${item.number}: closed`);
+    return;
+  }
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
   if (isActiveWorking(state) && !notesAfterLastPhase(comments, "working")) {
@@ -1172,6 +1179,10 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
 }
 
 async function handleChildFromBoard(item: BoardIssue, token: string): Promise<void> {
+  if (item.closed) {
+    console.log(`skip child ${item.url}: closed`);
+    return;
+  }
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
   if (!shouldWakeChild(state, comments)) {
@@ -1196,14 +1207,18 @@ async function watchBoard(): Promise<void> {
   try {
     const token = writeToken();
     if (!token) throw new Error("нет секрета ORCHESTRATOR_GITHUB_TOKEN");
-    const items = listProjectIssues(token).filter((item) => item.status === "In Progress");
+    const items = listProjectIssues(token).filter(
+      (item) => item.status === "In Progress" && !item.closed,
+    );
     const goals = items.filter((item) => item.repo === GOAL_REPO && item.labels.includes("goal"));
     const children = items.filter((item) => isRepo(item.repo));
     console.log(`watch: ${goals.length} goal, ${children.length} child in In Progress`);
     for (const goal of goals) {
       await handleGoalFromBoard(goal, token);
     }
-    const afterGoals = listProjectIssues(token).filter((item) => item.status === "In Progress");
+    const afterGoals = listProjectIssues(token).filter(
+      (item) => item.status === "In Progress" && !item.closed,
+    );
     const remaining = afterGoals.filter((item) => isRepo(item.repo));
     const queue = remaining.length ? remaining : children;
     for (const child of queue) {
