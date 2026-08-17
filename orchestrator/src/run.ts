@@ -766,6 +766,9 @@ async function runMachineWorker(
       const waitMs = 30_000 * attempt;
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`worker ${task.id} start failed, retry ${attempt}/${attempts} in ${waitMs}ms: ${message}`);
+      await notifyTelegram(
+        `My Machines повтор ${attempt}/${attempts}: ${task.id}\n${issueUrl}\n${message.slice(0, 400)}`,
+      );
       await sleep(waitMs);
     }
   }
@@ -1081,6 +1084,16 @@ async function runGoalRevision(
   if (!(await commentDispatch(issue.number, issue.html_url, notes, token))) process.exitCode = 2;
 }
 
+function childWakeReason(state: DispatchState | undefined, comments: IssueComment[]): string {
+  if (state?.phase === "error") return "после ошибки";
+  if (state?.phase === "review") return "после Review";
+  if (state?.phase === "working" && notesAfterLastPhase(comments, "working")) {
+    return "повтор: комментарий пока working";
+  }
+  if (state?.phase === "working") return "повтор: working завис";
+  return state?.phase ?? "старт";
+}
+
 async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<void> {
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
@@ -1090,6 +1103,13 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   }
   const stored = extractStoredPlan(comments, item.number);
   const issue = fetchIssue(item.repo, item.number, token);
+  const why =
+    state?.phase === "review"
+      ? "правка после Review"
+      : stored
+        ? "догоняю воркеров"
+        : "первый прогон";
+  await notifyTelegram(`Доска: Goal #${item.number} — ${why}\n${item.url}`);
   claimWorking(item.repo, item.number, token);
   await sleep(CLAIM_WAIT_MS);
   const fresh = listIssueComments(item.repo, item.number, token);
@@ -1112,6 +1132,9 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
     console.log(`skip child ${item.url}: phase=${state?.phase ?? "none"}`);
     return;
   }
+  await notifyTelegram(
+    `Доска: ${item.repo} #${item.number} — ${childWakeReason(state, comments)}\n${item.url}`,
+  );
   claimWorking(item.repo, item.number, token);
   await sleep(CLAIM_WAIT_MS);
   const fresh = listIssueComments(item.repo, item.number, token);
@@ -1121,20 +1144,29 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
 }
 
 async function watchBoard(): Promise<void> {
-  const token = writeToken();
-  if (!token) throw new Error("нет секрета ORCHESTRATOR_GITHUB_TOKEN");
-  const items = listProjectIssues(token).filter((item) => item.status === "In Progress");
-  const goals = items.filter((item) => item.repo === GOAL_REPO && item.labels.includes("goal"));
-  const children = items.filter((item) => isRepo(item.repo));
-  console.log(`watch: ${goals.length} goal, ${children.length} child in In Progress`);
-  for (const goal of goals) {
-    await handleGoalFromBoard(goal, token);
+  if (!process.env.TELEGRAM_BOT_TOKEN?.trim() || !process.env.TELEGRAM_CHAT_ID?.trim()) {
+    console.warn("telegram: нет TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID — в чат не пишу");
   }
-  const afterGoals = listProjectIssues(token).filter((item) => item.status === "In Progress");
-  const remaining = afterGoals.filter((item) => isRepo(item.repo));
-  const queue = remaining.length ? remaining : children;
-  for (const child of queue) {
-    await handleChildFromBoard(child, token);
+  try {
+    const token = writeToken();
+    if (!token) throw new Error("нет секрета ORCHESTRATOR_GITHUB_TOKEN");
+    const items = listProjectIssues(token).filter((item) => item.status === "In Progress");
+    const goals = items.filter((item) => item.repo === GOAL_REPO && item.labels.includes("goal"));
+    const children = items.filter((item) => isRepo(item.repo));
+    console.log(`watch: ${goals.length} goal, ${children.length} child in In Progress`);
+    for (const goal of goals) {
+      await handleGoalFromBoard(goal, token);
+    }
+    const afterGoals = listProjectIssues(token).filter((item) => item.status === "In Progress");
+    const remaining = afterGoals.filter((item) => isRepo(item.repo));
+    const queue = remaining.length ? remaining : children;
+    for (const child of queue) {
+      await handleChildFromBoard(child, token);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await notifyTelegram(`board-watch ошибка\n${message.slice(0, 500)}`);
+    throw err;
   }
 }
 

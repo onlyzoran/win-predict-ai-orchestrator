@@ -25,8 +25,9 @@ sudo -u cursor-worker git clone https://github.com/onlyzoran/win-predict-ai-orch
 chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/board-watch.sh
 sudo -u cursor-worker bash -lc 'cd /opt/cursor-workers/win-predict-ai-orchestrator && npm ci'
 
-# В /etc/cursor-worker.env должны быть CURSOR_API_KEY и ORCHESTRATOR_GITHUB_TOKEN
-# (и по желанию TELEGRAM_*).
+# В /etc/cursor-worker.env: CURSOR_API_KEY, ORCHESTRATOR_GITHUB_TOKEN,
+# TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID (те же, что GitHub secrets).
+# Без TELEGRAM_* вотчер и воркеры в чат не пишут.
 
 install -m 644 /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/board-watch.service /etc/systemd/system/
 install -m 644 /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/board-watch.timer /etc/systemd/system/

@@ -33,7 +33,7 @@ orchestrator/
 |---|---|
 | `CURSOR_API_KEY` | персональный user key; менеджер (local) и воркеры (My Machines). Тот же ключ / тот же Cursor-аккаунт, что у `agent worker start` на VPS |
 | `ORCHESTRATOR_GITHUB_TOKEN` | PAT: `repo` + `project`; в сессии воркера как `$GH_TOKEN` |
-| `TELEGRAM_BOT_TOKEN` | бот для коротких событий `/orchestrate` (не сырой лог) |
+| `TELEGRAM_BOT_TOKEN` | бот для коротких событий (не сырой лог, не каждый тик таймера) |
 | `TELEGRAM_CHAT_ID` | чат, куда писать |
 
 `CURSOR_MACHINE_NAME` в Action = `win-predict-vps` (не секрет).
