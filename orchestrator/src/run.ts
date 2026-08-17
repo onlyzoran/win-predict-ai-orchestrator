@@ -218,6 +218,32 @@ function isActiveWorking(state: DispatchState | undefined): boolean {
   return !Number.isNaN(started) && Date.now() - started < WORKING_STALE_MS;
 }
 
+function lastPhaseIndex(comments: IssueComment[], phase: DispatchPhase): number {
+  let index = -1;
+  comments.forEach((comment, i) => {
+    if (parseDispatchState(comment.body)?.phase === phase) index = i;
+  });
+  return index;
+}
+
+function notesAfterLastPhase(comments: IssueComment[], phase: DispatchPhase): string {
+  const after = lastPhaseIndex(comments, phase);
+  const slice = after >= 0 ? comments.slice(after + 1) : comments;
+  return slice
+    .filter(isHumanNote)
+    .map((comment) => comment.body.trim())
+    .join("\n\n---\n\n");
+}
+
+function shouldWakeChild(state: DispatchState | undefined, comments: IssueComment[]): boolean {
+  if (state?.phase === "review" || state?.phase === "error") return true;
+  if (state?.phase === "working") {
+    if (notesAfterLastPhase(comments, "working")) return true;
+    return !isActiveWorking(state);
+  }
+  return false;
+}
+
 function formatDispatchComment(state: DispatchState, lines: string[]): string {
   return [DISPATCH_MARKER, `<!-- orchestrator-state:${JSON.stringify(state)} -->`, ...lines].join(
     "\n",
@@ -1058,7 +1084,7 @@ async function runGoalRevision(
 async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<void> {
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
-  if (isActiveWorking(state)) {
+  if (isActiveWorking(state) && !notesAfterLastPhase(comments, "working")) {
     console.log(`skip goal #${item.number}: already working`);
     return;
   }
@@ -1082,11 +1108,7 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
 async function handleChildFromBoard(item: BoardIssue, token: string): Promise<void> {
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
-  if (isActiveWorking(state)) {
-    console.log(`skip child ${item.url}: already working`);
-    return;
-  }
-  if (state?.phase !== "review" && state?.phase !== "error") {
+  if (!shouldWakeChild(state, comments)) {
     console.log(`skip child ${item.url}: phase=${state?.phase ?? "none"}`);
     return;
   }
