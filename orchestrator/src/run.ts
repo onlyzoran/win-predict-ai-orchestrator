@@ -1310,6 +1310,10 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   }
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
+  if (state?.phase === "error" && !notesAfterLastPhase(comments, "error")) {
+    console.log(`skip goal #${item.number}: error, нет новых комментариев`);
+    return;
+  }
   if (isResourceBackoff(state, comments)) {
     console.log(`skip goal #${item.number}: resource_exhausted backoff`);
     return;
