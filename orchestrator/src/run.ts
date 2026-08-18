@@ -443,7 +443,20 @@ function isResourceBackoff(state: DispatchState | undefined, comments: IssueComm
   return !Number.isNaN(at) && Date.now() - at < RESOURCE_BACKOFF_MS;
 }
 
-function shouldWakeChild(state: DispatchState | undefined, comments: IssueComment[]): boolean {
+function slotFailedFor(issueUrl: string): boolean {
+  const inventory = readInventory();
+  if (inventory.active.some((run) => run.issueUrl === issueUrl)) return false;
+  const last = inventory.last;
+  return Boolean(
+    last && last.issueUrl === issueUrl && (last.status === "error" || last.status === "quota"),
+  );
+}
+
+function shouldWakeChild(
+  state: DispatchState | undefined,
+  comments: IssueComment[],
+  issueUrl: string,
+): boolean {
   if (state?.phase === "error") {
     if (isResourceBackoff(state, comments)) return false;
     return true;
@@ -458,6 +471,7 @@ function shouldWakeChild(state: DispatchState | undefined, comments: IssueCommen
   }
   if (state?.phase === "working") {
     if (notesAfterLastPhase(comments, "working")) return true;
+    if (slotFailedFor(issueUrl)) return true;
     return !isActiveWorking(state);
   }
   return false;
@@ -907,6 +921,33 @@ function isRetryableWorkerStart(err: unknown): boolean {
   );
 }
 
+function runFailureMessage(result: { id?: string; status: string; error?: unknown }): string {
+  const err = result.error;
+  const nested =
+    err && typeof err === "object" && "message" in err && typeof (err as { message: unknown }).message === "string"
+      ? (err as { message: string }).message.trim()
+      : "";
+  const detail =
+    (typeof err === "string" && err.trim()) ||
+    nested ||
+    (err && typeof err === "object" ? JSON.stringify(err) : "") ||
+    result.status;
+  return result.id ? `run status ${detail} (${result.id})` : `run status ${detail}`;
+}
+
+function isNewIconTask(task: Task): task is Task & { trigger: { type: "slash"; command: "/new-icon" } } {
+  return task.trigger.type === "slash" && task.trigger.command === "/new-icon";
+}
+
+function triggerFromBoardIssue(body: string, surface: Surface): Trigger {
+  const slash = body.match(/комментарий `(\/new-icon|\/ui-agent)`/);
+  if (slash?.[1] === "/new-icon" || slash?.[1] === "/ui-agent") {
+    return { type: "slash", command: slash[1] };
+  }
+  if (surface === "icons") return { type: "slash", command: "/new-icon" };
+  return { type: "sdk" };
+}
+
 function isVisualTask(task: Task, notes = ""): boolean {
   return (
     task.surface === "ui" ||
@@ -1028,7 +1069,7 @@ async function runReviewer(task: Task, issueUrl: string, prUrls: string[], token
   });
   console.log(`reviewer run=${result.id} status=${result.status} task=${task.id}`);
   if (result.status !== "finished") {
-    throw new Error(result.error?.message || `run status ${result.status}`);
+    throw new Error(runFailureMessage(result));
   }
   const review = validateReview(extractJson(result.result ?? ""));
   if (failedChecks && review.verdict === "pass") {
@@ -1123,10 +1164,19 @@ async function settleWithReviewer(
     previousChanges >= REVIEW_MAX_CHANGES
       ? `\nРаунд автоправок исчерпан (${previousChanges}/${REVIEW_MAX_CHANGES}). Не ставь changes — только pass или blocked.`
       : `\nУже было changes от ревьюера: ${previousChanges}/${REVIEW_MAX_CHANGES}.`;
+  const iconGate = isNewIconTask(task)
+    ? "\nЭто PR от `/new-icon` с вариантами A–D. Не ставь changes с требованием канонических IconFoo без суффикса и не зови MODE B на VPS. Выбор варианта — человек комментарием в PR. verdict: pass если варианты на месте и checks не красные, иначе blocked."
+    : "";
 
   let review: Review;
   try {
-    review = await runReviewer(task, issueUrl, ctx.prUrls, token, `${roundCap}\n\nСдача воркера:\n${ctx.source}`);
+    review = await runReviewer(
+      task,
+      issueUrl,
+      ctx.prUrls,
+      token,
+      `${roundCap}${iconGate}\n\nСдача воркера:\n${ctx.source}`,
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`reviewer ${task.id}: ${message}`);
@@ -1212,9 +1262,40 @@ function taskFromBoardIssue(item: BoardIssue): Task {
     body: item.body,
     depends_on: [],
     parallel_group: 1,
-    trigger: { type: "sdk" },
+    trigger: triggerFromBoardIssue(item.body, surface),
     done_when: doneWhen,
   };
+}
+
+async function finishNewIconWithoutMachine(
+  issueUrl: string,
+  token: string,
+  prUrls: string[],
+): Promise<string> {
+  const { repo, number } = parseIssueUrl(issueUrl);
+  addToProject(issueUrl, "Review", token);
+  const prLines = prUrls.map((url) => `- ${url}`).join("\n");
+  commentOnIssue(
+    repo,
+    number,
+    formatDispatchComment(
+      {
+        phase: "review",
+        prUrls,
+        reviewVerdict: "blocked",
+        at: new Date().toISOString(),
+      },
+      [
+        "Slash `/new-icon` уже открыл PR с вариантами. Это не слот My Machines (`win-predict-vps`).",
+        "",
+        "**Нужна приёмка.** Выбери вариант A–D комментарием в PR — дальше choose-or-revise. Канонические имена и README — после выбора. Merge сам.",
+        prLines,
+      ],
+    ),
+    token,
+  );
+  await notifyTelegram(`Иконки: выбор в PR, не VPS\n${issueUrl}\n${prUrls.join("\n")}`);
+  return `${issueUrl} — review blocked — ${prUrls.join(" ")}`;
 }
 
 async function runMachineWorker(
@@ -1293,7 +1374,7 @@ async function runMachineWorker(
         );
         const result = await run.wait();
         if (result.status !== "finished") {
-          throw new Error(result.error?.message || `run status ${result.status}`);
+          throw new Error(runFailureMessage(result));
         }
         const summary = (result.result ?? "").trim().slice(0, 1500) || "(нет текста)";
         const prUrls = extractPrUrls(summary);
@@ -1342,7 +1423,11 @@ async function dispatchTask(
     if (skipIfOpenPr) addToProject(issueUrl, "Inbox", token);
     return `${issueUrl} — issue_only, воркера нет`;
   }
-  if (skipIfOpenPr && task.trigger.type === "slash" && task.trigger.command !== "/ui-agent") {
+  if (isNewIconTask(task)) {
+    const existing = findOpenPrsForIssue(issueUrl, token);
+    if (existing.length) {
+      return finishNewIconWithoutMachine(issueUrl, token, existing);
+    }
     addToProject(issueUrl, "In Progress", token);
     commentOnIssue(repo, number, task.trigger.command, token);
     await notifyTelegram(`Slash ${task.trigger.command}: ждём PR\n${issueUrl}`);
@@ -1400,37 +1485,47 @@ async function dispatchPlan(
       }
       notes.push(await dispatchTask(task, url, token, opts));
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(err);
       const prs = findOpenPrsForIssue(url, token);
       if (prs.length && isRetryableWorkerStart(err)) {
         notes.push(`${url} — квота Cursor, PR на месте ${prs.join(" ")}`);
         await notifyTelegram(`Квота Cursor, PR уже есть: ${task.id}\n${prs.join("\n")}`);
         continue;
       }
+      const message = err instanceof Error ? err.message : String(err);
       notes.push(`${url} — ошибка: ${message}`);
-      await notifyTelegram(`Ошибка воркера: ${task.id}\n${url}\n${message.slice(0, 500)}`);
-      try {
-        const { repo, number } = parseIssueUrl(url);
-        commentOnIssue(
-          repo,
-          number,
-          formatDispatchComment(
-            { phase: "error", at: new Date().toISOString() },
-            [
-              `Не удалось запустить воркера: ${message}`,
-              "",
-              "Повтор: комментарий в issue и карточку верни в In Progress.",
-            ],
-          ),
-          token,
-        );
-      } catch {
-        /* ignore */
-      }
+      await reportChildFailure(url, task.id, err, token);
     }
   }
   return notes;
+}
+
+async function reportChildFailure(
+  issueUrl: string,
+  taskId: string,
+  err: unknown,
+  token: string,
+): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(err);
+  await notifyTelegram(`Ошибка воркера: ${taskId}\n${issueUrl}\n${message.slice(0, 500)}`);
+  try {
+    const { repo, number } = parseIssueUrl(issueUrl);
+    commentOnIssue(
+      repo,
+      number,
+      formatDispatchComment(
+        { phase: "error", at: new Date().toISOString() },
+        [
+          `Не удалось запустить воркера: ${message}`,
+          "",
+          "Повтор: комментарий в issue и карточку верни в In Progress.",
+        ],
+      ),
+      token,
+    );
+  } catch {
+    /* ignore */
+  }
 }
 
 async function decompose(issue: IssueCommentEvent["issue"], extra = ""): Promise<Plan> {
@@ -1465,7 +1560,7 @@ async function decompose(issue: IssueCommentEvent["issue"], extra = ""): Promise
 
   console.log(`manager run=${result.id} status=${result.status}`);
   if (result.status !== "finished") {
-    throw new Error(result.error?.message || `run status ${result.status}`);
+    throw new Error(runFailureMessage(result));
   }
   return validatePlan(extractJson(result.result ?? ""), issue.number);
 }
@@ -1705,7 +1800,7 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
     console.log(`skip child ${item.url}: reviewing`);
     return;
   }
-  if (!shouldWakeChild(state, comments)) {
+  if (!shouldWakeChild(state, comments, item.url)) {
     console.log(`skip child ${item.url}: phase=${state?.phase ?? "none"}`);
     return;
   }
@@ -1717,8 +1812,12 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
   const fresh = listIssueComments(item.repo, item.number, token);
   const humanNotes = notesForWorker(fresh);
   const task = taskFromBoardIssue(item);
-  await dispatchTask(task, item.url, token, { skipIfOpenPr: false, notes: humanNotes });
-  await maybePromoteGoal(item.body, token);
+  try {
+    await dispatchTask(task, item.url, token, { skipIfOpenPr: false, notes: humanNotes });
+    await maybePromoteGoal(item.body, token);
+  } catch (err) {
+    await reportChildFailure(item.url, task.id, err, token);
+  }
 }
 
 async function watchBoard(): Promise<void> {
