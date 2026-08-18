@@ -18,6 +18,9 @@ const PLAN_MARKER = "<!-- orchestrator-plan -->";
 const DISPATCH_MARKER = "<!-- orchestrator-dispatch -->";
 const STATE_RE = /<!-- orchestrator-state:(.*?) -->/;
 const WORKING_STALE_MS = 3 * 60 * 60 * 1000;
+const REVIEW_MAX_CHANGES = 2;
+const REVIEW_CHANGES_DEBOUNCE_MS = 60_000;
+const PR_DIFF_MAX_CHARS = 100_000;
 const RESOURCE_BACKOFF_MS = 15 * 60 * 1000;
 const MACHINE_NAME = process.env.CURSOR_MACHINE_NAME?.trim() || "win-predict-vps";
 const MACHINE_SLOTS = 1;
@@ -59,7 +62,8 @@ type Trigger =
   | { type: "slash"; command: "/ui-agent" | "/new-icon" }
   | { type: "sdk" }
   | { type: "issue_only" };
-type DispatchPhase = "working" | "review" | "error";
+type DispatchPhase = "working" | "reviewing" | "review" | "error";
+type ReviewVerdict = "pass" | "changes" | "blocked";
 type DispatchState = {
   phase: DispatchPhase;
   agentId?: string;
@@ -67,6 +71,13 @@ type DispatchState = {
   prUrls?: string[];
   headRef?: string;
   at?: string;
+  reviewVerdict?: ReviewVerdict;
+  reviewRound?: number;
+};
+type Review = {
+  verdict: ReviewVerdict;
+  summary: string;
+  findings: string[];
 };
 
 type Task = {
@@ -343,6 +354,12 @@ function parseIssueUrl(url: string): { repo: string; number: number } {
   return { repo: match[1], number: Number(match[2]) };
 }
 
+function parsePrUrl(url: string): { repo: string; number: number } {
+  const match = url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+  if (!match) throw new Error(`не URL PR: ${url}`);
+  return { repo: match[1], number: Number(match[2]) };
+}
+
 function listIssueComments(repo: string, issueNumber: number, token: string): IssueComment[] {
   const raw = gh(
     ["api", `repos/${repo}/issues/${issueNumber}/comments?per_page=100`],
@@ -357,12 +374,20 @@ function parseDispatchState(body: string): DispatchState | undefined {
   if (tagged) {
     try {
       const raw = JSON.parse(tagged[1]) as DispatchState;
-      if (raw.phase === "working" || raw.phase === "review" || raw.phase === "error") return raw;
+      if (
+        raw.phase === "working" ||
+        raw.phase === "reviewing" ||
+        raw.phase === "review" ||
+        raw.phase === "error"
+      ) {
+        return raw;
+      }
     } catch {
       /* ignore */
     }
   }
   if (!body.includes(DISPATCH_MARKER)) return undefined;
+  if (/Ревьюер смотрит/.test(body)) return { phase: "reviewing" };
   if (/Нужна приёмка/.test(body)) return { phase: "review" };
   if (/\*\*В работе\.\*\*/.test(body)) return { phase: "working" };
   if (/Не удалось запустить воркера/.test(body)) return { phase: "error" };
@@ -378,7 +403,15 @@ function lastDispatchState(comments: IssueComment[]): DispatchState | undefined 
 }
 
 function isActiveWorking(state: DispatchState | undefined): boolean {
-  if (state?.phase !== "working") return false;
+  return isActivePhase(state, "working");
+}
+
+function isActiveReviewing(state: DispatchState | undefined): boolean {
+  return isActivePhase(state, "reviewing");
+}
+
+function isActivePhase(state: DispatchState | undefined, phase: DispatchPhase): boolean {
+  if (state?.phase !== phase) return false;
   if (!state.at) return true;
   const started = Date.parse(state.at);
   return !Number.isNaN(started) && Date.now() - started < WORKING_STALE_MS;
@@ -415,7 +448,14 @@ function shouldWakeChild(state: DispatchState | undefined, comments: IssueCommen
     if (isResourceBackoff(state, comments)) return false;
     return true;
   }
-  if (state?.phase === "review") return true;
+  if (state?.phase === "reviewing") return !isActiveReviewing(state);
+  if (state?.phase === "review") {
+    if (state.reviewVerdict === "changes" && state.at) {
+      const at = Date.parse(state.at);
+      if (!Number.isNaN(at) && Date.now() - at < REVIEW_CHANGES_DEBOUNCE_MS) return false;
+    }
+    return true;
+  }
   if (state?.phase === "working") {
     if (notesAfterLastPhase(comments, "working")) return true;
     return !isActiveWorking(state);
@@ -436,6 +476,23 @@ function claimWorking(repo: string, issueNumber: number, token: string): void {
     formatDispatchComment(
       { phase: "working", at: new Date().toISOString() },
       ["", "**В работе.** Карточка In Progress. Не дублирую запуск."],
+    ),
+    token,
+  );
+}
+
+function claimReviewing(
+  repo: string,
+  issueNumber: number,
+  token: string,
+  state: Pick<DispatchState, "agentId" | "runId" | "prUrls" | "headRef">,
+): void {
+  commentOnIssue(
+    repo,
+    issueNumber,
+    formatDispatchComment(
+      { phase: "reviewing", ...state, at: new Date().toISOString() },
+      ["", "**Ревьюер смотрит.** PR сдан, карточка In Progress. Не дублирую запуск."],
     ),
     token,
   );
@@ -463,6 +520,39 @@ function notesAfterLastReview(comments: IssueComment[]): string {
     .filter(isHumanNote)
     .map((comment) => comment.body.trim())
     .join("\n\n---\n\n");
+}
+
+function stripDispatchChrome(body: string): string {
+  return body
+    .replace(DISPATCH_MARKER, "")
+    .replace(STATE_RE, "")
+    .replace(/^\s+|\s+$/g, "")
+    .trim();
+}
+
+function lastReviewerChanges(comments: IssueComment[]): string {
+  for (const comment of [...comments].reverse()) {
+    const state = parseDispatchState(comment.body);
+    if (state?.phase !== "review") continue;
+    if (state.reviewVerdict === "changes") return stripDispatchChrome(comment.body);
+    return "";
+  }
+  return "";
+}
+
+function notesForWorker(comments: IssueComment[]): string {
+  return [lastReviewerChanges(comments), notesAfterLastReview(comments)].filter(Boolean).join("\n\n---\n\n");
+}
+
+function countReviewChanges(comments: IssueComment[]): number {
+  let lastReset = -1;
+  comments.forEach((comment, index) => {
+    const verdict = parseDispatchState(comment.body)?.reviewVerdict;
+    if (verdict === "pass" || verdict === "blocked") lastReset = index;
+  });
+  return comments
+    .slice(lastReset + 1)
+    .filter((comment) => parseDispatchState(comment.body)?.reviewVerdict === "changes").length;
 }
 
 function extractStoredPlan(comments: IssueComment[], goalNumber: number): Plan | undefined {
@@ -817,6 +907,295 @@ function isRetryableWorkerStart(err: unknown): boolean {
   );
 }
 
+function isVisualTask(task: Task, notes = ""): boolean {
+  return (
+    task.surface === "ui" ||
+    task.surface === "app" ||
+    task.surface === "admin" ||
+    /цвет|палитр|theme|токен|dark|light|контраст/i.test(`${task.title}\n${task.body}\n${notes}`)
+  );
+}
+
+function parentGoalNumber(body: string): number | undefined {
+  const tagged = body.match(
+    /Parent:\s*(?:https:\/\/github\.com\/)?onlyzoran\/win-predict-ai-orchestrator(?:\/issues\/|#)(\d+)/i,
+  );
+  return tagged ? Number(tagged[1]) : undefined;
+}
+
+function checksFailed(rollup: unknown): boolean {
+  if (!Array.isArray(rollup)) return false;
+  return rollup.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const row = item as { state?: string; conclusion?: string };
+    const flag = `${row.state ?? ""} ${row.conclusion ?? ""}`.toLowerCase();
+    return /fail|error|timed_out|cancelled/.test(flag);
+  });
+}
+
+function gatherPrContext(prUrl: string, token: string): { text: string; checksFailed: boolean } {
+  const { repo, number } = parsePrUrl(prUrl);
+  let view = "";
+  let failed = false;
+  try {
+    view = gh(
+      [
+        "pr",
+        "view",
+        String(number),
+        "-R",
+        repo,
+        "--json",
+        "title,body,url,files,additions,deletions,author,statusCheckRollup",
+      ],
+      token,
+    );
+    const parsed = JSON.parse(view) as { statusCheckRollup?: unknown };
+    failed = checksFailed(parsed.statusCheckRollup);
+  } catch (err) {
+    view = `не удалось прочитать PR: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  let diff = "";
+  try {
+    diff = gh(["pr", "diff", String(number), "-R", repo], token);
+    if (diff.length > PR_DIFF_MAX_CHARS) {
+      diff = `${diff.slice(0, PR_DIFF_MAX_CHARS)}\n… truncated`;
+    }
+  } catch (err) {
+    diff = `не удалось снять diff: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  return {
+    checksFailed: failed,
+    text: [`PR: ${prUrl}`, "", "gh pr view:", view, "", "gh pr diff:", diff || "(пусто)"].join("\n"),
+  };
+}
+
+function validateReview(raw: unknown): Review {
+  if (!raw || typeof raw !== "object") throw new Error("ревью не объект");
+  const p = raw as Record<string, unknown>;
+  const verdict = p.verdict;
+  if (verdict !== "pass" && verdict !== "changes" && verdict !== "blocked") {
+    throw new Error("некорректный verdict");
+  }
+  if (typeof p.summary !== "string" || !p.summary.trim()) throw new Error("пустой summary");
+  if (!Array.isArray(p.findings) || !p.findings.every((item) => typeof item === "string" && item.trim())) {
+    throw new Error("некорректные findings");
+  }
+  return {
+    verdict,
+    summary: p.summary.trim(),
+    findings: (p.findings as string[]).map((item) => item.trim()),
+  };
+}
+
+async function runReviewer(task: Task, issueUrl: string, prUrls: string[], token: string, extra = ""): Promise<Review> {
+  const apiKey = process.env.CURSOR_API_KEY?.trim();
+  if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
+  const reviewer = readFileSync(join(ROOT, "orchestrator/prompts/reviewer.md"), "utf8");
+  const schema = readFileSync(join(ROOT, "orchestrator/schema/review.schema.json"), "utf8");
+  const design = isVisualTask(task)
+    ? readFileSync(join(ROOT, "orchestrator/prompts/design.md"), "utf8")
+    : "";
+  const prBlocks = prUrls.map((url) => gatherPrContext(url, token));
+  const failedChecks = prBlocks.some((block) => block.checksFailed);
+  const prompt = [
+    reviewer,
+    design ? `\n${design}\n` : "",
+    "",
+    "Схема вердикта (соблюдай строго):",
+    schema,
+    "",
+    `Репозиторий: ${task.repo}`,
+    `Поверхность: ${task.surface}`,
+    `Child issue: ${issueUrl}`,
+    `Заголовок: ${task.title}`,
+    `Критерий куска: ${task.done_when}`,
+    "",
+    "Тело задачи:",
+    task.body,
+    extra,
+    "",
+    prBlocks.map((block) => block.text).join("\n\n---\n\n"),
+    failedChecks ? "\nChecks PR красные — verdict не может быть pass." : "",
+    "",
+    "Верни только один блок ```json ... ``` с объектом вердикта. Никакого текста снаружи.",
+  ].join("\n");
+
+  const result = await Agent.prompt(prompt, {
+    apiKey,
+    model: { id: "composer-2.5" },
+    local: { cwd: ROOT },
+  });
+  console.log(`reviewer run=${result.id} status=${result.status} task=${task.id}`);
+  if (result.status !== "finished") {
+    throw new Error(result.error?.message || `run status ${result.status}`);
+  }
+  const review = validateReview(extractJson(result.result ?? ""));
+  if (failedChecks && review.verdict === "pass") {
+    return {
+      verdict: "changes",
+      summary: `${review.summary} Checks красные — pass снят.`,
+      findings: [...review.findings, "Почини красные checks на PR."],
+    };
+  }
+  if (review.verdict === "changes" && review.findings.length === 0) {
+    return { ...review, verdict: "blocked", summary: `${review.summary} Ревьюер не дал пунктов — нужен человек.` };
+  }
+  return review;
+}
+
+async function maybePromoteGoal(childBody: string, token: string): Promise<void> {
+  const goalNumber = parentGoalNumber(childBody);
+  if (!goalNumber) return;
+  const comments = listIssueComments(GOAL_REPO, goalNumber, token);
+  if (lastDispatchState(comments)?.phase === "review") return;
+  const plan = extractStoredPlan(comments, goalNumber);
+  if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return;
+  for (const task of plan.tasks) {
+    const url = findExistingChild(task, plan.goal_number, token);
+    if (!url) return;
+    const { repo, number } = parseIssueUrl(url);
+    const state = lastDispatchState(listIssueComments(repo, number, token));
+    if (state?.phase !== "review") return;
+    if (state.reviewVerdict === "changes") return;
+  }
+  const goalUrl = `https://github.com/${GOAL_REPO}/issues/${goalNumber}`;
+  addToProject(goalUrl, "Review", token);
+  commentOnGoal(
+    goalNumber,
+    formatDispatchComment(
+      { phase: "review", at: new Date().toISOString() },
+      [
+        "**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Merge сам.",
+      ],
+    ),
+  );
+  await notifyTelegram(`Goal #${goalNumber}: Review, нужна приёмка\n${goalUrl}`);
+}
+
+async function settleWithReviewer(
+  task: Task,
+  issueUrl: string,
+  token: string,
+  ctx: {
+    prUrls: string[];
+    source: string;
+    agentId?: string;
+    runId?: string;
+    headRef?: string;
+  },
+): Promise<string> {
+  const { repo, number } = parseIssueUrl(issueUrl);
+  const prLines = ctx.prUrls.length
+    ? ctx.prUrls.map((url) => `- ${url}`).join("\n")
+    : "- (URL PR не найден)";
+  const baseState = {
+    agentId: ctx.agentId,
+    runId: ctx.runId,
+    prUrls: ctx.prUrls,
+    headRef: ctx.headRef,
+  };
+
+  if (!ctx.prUrls.length) {
+    addToProject(issueUrl, "Review", token);
+    commentOnIssue(
+      repo,
+      number,
+      formatDispatchComment(
+        { phase: "review", ...baseState, reviewVerdict: "blocked", at: new Date().toISOString() },
+        [
+          ctx.source,
+          "",
+          "**Нужна приёмка.** PR нет — реши сам. Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам.",
+          prLines,
+        ],
+      ),
+      token,
+    );
+    return `${issueUrl} — review blocked — нет PR`;
+  }
+
+  addToProject(issueUrl, "In Progress", token);
+  claimReviewing(repo, number, token, baseState);
+  const comments = listIssueComments(repo, number, token);
+  const previousChanges = countReviewChanges(comments);
+  const roundCap =
+    previousChanges >= REVIEW_MAX_CHANGES
+      ? `\nРаунд автоправок исчерпан (${previousChanges}/${REVIEW_MAX_CHANGES}). Не ставь changes — только pass или blocked.`
+      : `\nУже было changes от ревьюера: ${previousChanges}/${REVIEW_MAX_CHANGES}.`;
+
+  let review: Review;
+  try {
+    review = await runReviewer(task, issueUrl, ctx.prUrls, token, `${roundCap}\n\nСдача воркера:\n${ctx.source}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`reviewer ${task.id}: ${message}`);
+    review = {
+      verdict: "blocked",
+      summary: `Ревьюер не смог: ${message.slice(0, 400)}`,
+      findings: ["Автопроверка упала — посмотри PR сам."],
+    };
+  }
+
+  if (review.verdict === "changes" && previousChanges >= REVIEW_MAX_CHANGES) {
+    review = {
+      verdict: "blocked",
+      summary: `${review.summary} Лимит автоправок (${REVIEW_MAX_CHANGES}) — решай ты.`,
+      findings: review.findings,
+    };
+  }
+
+  const findingLines = review.findings.map((item) => `- ${item}`);
+  const at = new Date().toISOString();
+  if (review.verdict === "changes") {
+    addToProject(issueUrl, "In Progress", token);
+    commentOnIssue(
+      repo,
+      number,
+      formatDispatchComment(
+        {
+          phase: "review",
+          ...baseState,
+          reviewVerdict: "changes",
+          reviewRound: previousChanges + 1,
+          at,
+        },
+        [
+          ctx.source,
+          "",
+          `**Ревьюер: правки** (раунд ${previousChanges + 1}/${REVIEW_MAX_CHANGES}). Карточка In Progress — воркер MODE B на следующем тике.`,
+          prLines,
+          "",
+          review.summary,
+          ...findingLines,
+        ],
+      ),
+      token,
+    );
+    await notifyTelegram(`Ревьюер: правки ${task.id}\n${issueUrl}\n${review.summary}`);
+    return `${issueUrl} — review changes — ${ctx.prUrls.join(" ")}`;
+  }
+
+  addToProject(issueUrl, "Review", token);
+  const headline =
+    review.verdict === "pass"
+      ? "**Нужна приёмка.** Ревьюер пропустил. Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам."
+      : "**Нужна приёмка.** Ревьюер заблокировал (нужен человек). Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам.";
+  commentOnIssue(
+    repo,
+    number,
+    formatDispatchComment(
+      { phase: "review", ...baseState, reviewVerdict: review.verdict, reviewRound: previousChanges, at },
+      [ctx.source, "", headline, prLines, "", review.summary, ...findingLines],
+    ),
+    token,
+  );
+  await notifyTelegram(
+    `Ревьюер: ${review.verdict} ${task.id}\n${issueUrl}\n${review.summary}\n${ctx.prUrls.join("\n")}`,
+  );
+  return `${issueUrl} — review ${review.verdict} — ${ctx.prUrls.join(" ")}`;
+}
+
 function taskFromBoardIssue(item: BoardIssue): Task {
   if (!isRepo(item.repo)) throw new Error(`не рабочий репо: ${item.repo}`);
   const fromLabel = item.labels.find((name) => isSurface(name));
@@ -843,7 +1222,7 @@ async function runMachineWorker(
   issueUrl: string,
   token: string,
   notes = "",
-): Promise<{ runId: string; prUrls: string[]; agentId: string; headRef: string }> {
+): Promise<{ runId: string; prUrls: string[]; agentId: string; headRef: string; summary: string }> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
   addToProject(issueUrl, "In Progress", token);
@@ -856,15 +1235,10 @@ async function runMachineWorker(
   };
   await publishActiveRun(occupancy, "старт");
   const worker = readFileSync(join(ROOT, "orchestrator/prompts/worker.md"), "utf8");
-  const visual =
-    task.surface === "ui" ||
-    task.surface === "app" ||
-    task.surface === "admin" ||
-    /цвет|палитр|theme|токен|dark|light|контраст/i.test(`${task.title}\n${task.body}\n${notes}`);
-  const design = visual
+  const design = isVisualTask(task, notes)
     ? readFileSync(join(ROOT, "orchestrator/prompts/design.md"), "utf8")
     : "";
-  const { repo, number } = parseIssueUrl(issueUrl);
+  const { repo } = parseIssueUrl(issueUrl);
   const openPrs = findOpenPrs(issueUrl, token);
   const mode = openPrs.length ? "B" : "A";
   const headRef = mode === "B" ? openPrs[0].headRefName || "main" : "main";
@@ -884,7 +1258,7 @@ async function runMachineWorker(
     task.body,
     "",
     notes
-      ? `Комментарии человека на issue после последней сдачи:\n${notes}`
+      ? `Комментарии после последней сдачи (ревьюер и человек):\n${notes}`
       : "Новых комментариев после сдачи нет — перечитай issue и открытый PR, исправь недочёты.",
     "",
     mode === "B"
@@ -924,38 +1298,11 @@ async function runMachineWorker(
         const summary = (result.result ?? "").trim().slice(0, 1500) || "(нет текста)";
         const prUrls = extractPrUrls(summary);
         if (mode === "B" && !prUrls.length) prUrls.push(openPrs[0].url);
-        addToProject(issueUrl, "Review", token);
-        const prLines = prUrls.length
-          ? prUrls.map((url) => `- ${url}`).join("\n")
-          : "- (URL PR в тексте воркера не найден)";
-        commentOnIssue(
-          repo,
-          number,
-          formatDispatchComment(
-            {
-              phase: "review",
-              agentId: agent.agentId,
-              runId: result.id,
-              prUrls,
-              headRef,
-              at: new Date().toISOString(),
-            },
-            [
-              `My Machines воркер завершился (\`${result.id}\`, agent \`${agent.agentId}\`, \`${MACHINE_NAME}\`, MODE ${mode}).`,
-              "",
-              "**Нужна приёмка.** Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам.",
-              prLines,
-              "",
-              summary,
-            ],
-          ),
-          token,
-        );
         occupancy.status = "review";
         occupancy.runId = result.id;
         occupancy.prUrls = prUrls;
         await closeActiveRun(occupancy, "готов");
-        return { runId: result.id, prUrls, agentId: agent.agentId, headRef };
+        return { runId: result.id, prUrls, agentId: agent.agentId, headRef, summary };
       } catch (err) {
         lastError = err;
         if (!isRetryableWorkerStart(err) || attempt === attempts) throw err;
@@ -1000,27 +1347,25 @@ async function dispatchTask(
     commentOnIssue(repo, number, task.trigger.command, token);
     await notifyTelegram(`Slash ${task.trigger.command}: ждём PR\n${issueUrl}`);
     const prUrls = await waitForOpenPr(issueUrl, token, SLASH_WAIT_MS);
-    addToProject(issueUrl, "Review", token);
-    commentOnIssue(
-      repo,
-      number,
-      formatDispatchComment(
-        { phase: "review", prUrls, at: new Date().toISOString() },
-        [
-          `Slash \`${task.trigger.command}\` открыл PR.`,
-          "",
-          "**Нужна приёмка.** Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам.",
-          ...prUrls.map((url) => `- ${url}`),
-        ],
-      ),
-      token,
-    );
     await notifyTelegram(`Slash ${task.trigger.command}: PR\n${prUrls.join("\n")}`);
-    return `${issueUrl} — \`${task.trigger.command}\` — ${prUrls.join(" ")}`;
+    return settleWithReviewer(task, issueUrl, token, {
+      prUrls,
+      source: `Slash \`${task.trigger.command}\` открыл PR.`,
+    });
   }
-  const { runId, prUrls } = await runMachineWorker(task, issueUrl, token, opts.notes ?? "");
-  const prNote = prUrls.length ? ` — ${prUrls.join(" ")}` : "";
-  return `${issueUrl} — machine \`${runId}\`${prNote}`;
+  const { runId, prUrls, agentId, headRef, summary } = await runMachineWorker(
+    task,
+    issueUrl,
+    token,
+    opts.notes ?? "",
+  );
+  return settleWithReviewer(task, issueUrl, token, {
+    prUrls,
+    agentId,
+    runId,
+    headRef,
+    source: `My Machines воркер завершился (\`${runId}\`, agent \`${agentId}\`, \`${MACHINE_NAME}\`).\n\n${summary}`,
+  });
 }
 
 async function dispatchPlan(
@@ -1139,8 +1484,9 @@ async function commentDispatch(
 ): Promise<boolean> {
   const failed = notes.some((n) => n.includes("ошибка") || n.includes("нет child"));
   const allSkipped = notes.length > 0 && notes.every((n) => n.includes("уже запускали"));
-  const machineDone = notes.some((n) => /\/pull\/\d+/.test(n) || n.includes(" — machine "));
-  const toReview = Boolean(token) && !failed && !allSkipped && machineDone;
+  const machineDone = notes.some((n) => /\/pull\/\d+/.test(n) || n.includes(" — machine ") || n.includes(" — review "));
+  const bounced = notes.some((n) => n.includes("review changes"));
+  const toReview = Boolean(token) && !failed && !allSkipped && machineDone && !bounced;
   if (toReview) addToProject(goalUrl, "Review", token);
   const prefix = failed
     ? formatDispatchComment(
@@ -1295,7 +1641,9 @@ async function runGoalRevision(
 
 function childWakeReason(state: DispatchState | undefined, comments: IssueComment[]): string {
   if (state?.phase === "error") return "после ошибки";
+  if (state?.phase === "review" && state.reviewVerdict === "changes") return "после ревьюера";
   if (state?.phase === "review") return "после Review";
+  if (state?.phase === "reviewing") return "повтор: ревьюер завис";
   if (state?.phase === "working" && notesAfterLastPhase(comments, "working")) {
     return "повтор: комментарий пока working";
   }
@@ -1353,6 +1701,10 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
   }
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
+  if (state?.phase === "reviewing" && isActiveReviewing(state)) {
+    console.log(`skip child ${item.url}: reviewing`);
+    return;
+  }
   if (!shouldWakeChild(state, comments)) {
     console.log(`skip child ${item.url}: phase=${state?.phase ?? "none"}`);
     return;
@@ -1363,9 +1715,10 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
   claimWorking(item.repo, item.number, token);
   await sleep(CLAIM_WAIT_MS);
   const fresh = listIssueComments(item.repo, item.number, token);
-  const humanNotes = notesAfterLastReview(fresh);
+  const humanNotes = notesForWorker(fresh);
   const task = taskFromBoardIssue(item);
   await dispatchTask(task, item.url, token, { skipIfOpenPr: false, notes: humanNotes });
+  await maybePromoteGoal(item.body, token);
 }
 
 async function watchBoard(): Promise<void> {

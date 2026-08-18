@@ -6,8 +6,10 @@
 orchestrator/
   prompts/manager.md
   prompts/worker.md          # исполнитель ui/app/admin/data на My Machines
+  prompts/reviewer.md        # local: вердикт по PR до колонки Review
   schema/plan.schema.json
   schema/plan.example.json
+  schema/review.schema.json
   src/run.ts
   ops/cursor-worker.service  # systemd: My Machines worker
   ops/board-watch.timer      # systemd: доска Review → In Progress
@@ -22,7 +24,7 @@ orchestrator/
 2. Диспетчер:
    - `slash` `/new-icon` → комментарий, **ждёт PR**
    - `ui` / `sdk` → My Machines `win-predict-vps` (`worker.md`)
-3. Успех: child и Goal → **Review**. **Done** и merge — человек.
+3. После PR local-ревьюер (`reviewer.md`): **pass** / **blocked** → child **Review**; **changes** → child остаётся **In Progress**, воркер MODE B (макс. 2 круга, потом blocked). Goal → **Review**, когда все child pass или blocked. **Done** и merge — человек.
 4. Правка: комментарий в **issue** (не в PR) и карточка **Review → In Progress**. Таймер `board-watch` на `win-predict-vps` (каждые 2 мин) поднимает Goal → оркестратор или child → воркер MODE B (та же ветка PR). Если VPS молчит — `systemctl start board-watch.service`.
 
 Если план уже есть, повторный `/orchestrate` только догоняет воркеров (не плодит issues). С нуля: `/orchestrate redo`. Ошибка старта воркера **не** ставит `DISPATCH_MARKER` на Goal — `/orchestrate` или возврат в In Progress можно повторить.
@@ -31,7 +33,7 @@ orchestrator/
 
 | Secret | Зачем |
 |---|---|
-| `CURSOR_API_KEY` | персональный user key; менеджер (local) и воркеры (My Machines). Тот же ключ / тот же Cursor-аккаунт, что у `agent worker start` на VPS |
+| `CURSOR_API_KEY` | персональный user key; менеджер и ревьюер (local) и воркеры (My Machines). Тот же ключ / тот же Cursor-аккаунт, что у `agent worker start` на VPS |
 | `ORCHESTRATOR_GITHUB_TOKEN` | PAT: `repo` + `project`; в сессии воркера как `$GH_TOKEN` |
 | `TELEGRAM_BOT_TOKEN` | бот для коротких событий (не сырой лог, не каждый тик таймера) |
 | `TELEGRAM_CHAT_ID` | чат, куда писать |
@@ -54,4 +56,5 @@ orchestrator/
 |---|---|
 | decompose | local `Agent.prompt` |
 | dispatch | issues + slash `/new-icon` или My Machines `worker.md` |
+| review | local `Agent.prompt` (`reviewer.md`) по PR; pass/blocked → Review, changes → воркер MODE B |
 | watch | systemd timer на VPS: In Progress после Review → оркестратор или воркер; Done и merge вручную |
