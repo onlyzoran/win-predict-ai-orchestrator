@@ -149,6 +149,7 @@ type InventoryRun = {
   status: InventoryStatus;
   attempt: number;
   startedAt: string;
+  model?: string;
   agentId?: string;
   runId?: string;
   prUrls?: string[];
@@ -342,14 +343,16 @@ function formatInventorySnapshot(inventory: Inventory, event: string): string {
     for (const run of inventory.active) {
       const attempt = run.attempt > 1 ? ` · попытка ${run.attempt}/4` : "";
       const title = run.title ? ` · ${run.title}` : "";
-      lines.push(`${run.status} · ${run.taskId}${title} · ${formatRunAge(run.startedAt)}${attempt}`);
+      const model = run.model ? ` · ${run.model}` : "";
+      lines.push(`${run.status} · ${run.taskId}${title}${model} · ${formatRunAge(run.startedAt)}${attempt}`);
       if (run.detail) lines.push(run.detail.slice(0, 300));
       lines.push(run.issueUrl);
     }
   } else {
     lines.push("свободно");
     if (inventory.last) {
-      lines.push(`последний: ${inventory.last.taskId} · ${inventory.last.status}`);
+      const lastModel = inventory.last.model ? ` · ${inventory.last.model}` : "";
+      lines.push(`последний: ${inventory.last.taskId} · ${inventory.last.status}${lastModel}`);
       if (inventory.last.prUrls?.length) lines.push(inventory.last.prUrls.join("\n"));
       else lines.push(inventory.last.issueUrl);
     }
@@ -1403,6 +1406,7 @@ async function runMachineWorker(
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
   addToProject(issueUrl, "In Progress", token);
+  const workerModel = "composer-2.5";
   const occupancy: InventoryRun = {
     taskId: task.id,
     title: task.title,
@@ -1412,6 +1416,7 @@ async function runMachineWorker(
     status: "starting",
     attempt: 1,
     startedAt: new Date().toISOString(),
+    model: workerModel,
   };
   await publishActiveRun(occupancy, "старт");
   const worker = readFileSync(join(ROOT, "orchestrator/prompts/worker.md"), "utf8");
@@ -1454,7 +1459,7 @@ async function runMachineWorker(
       try {
         await using agent = await Agent.create({
           apiKey,
-          model: { id: "composer-2.5" },
+          model: { id: workerModel },
           cloud: {
             env: { type: "machine", name: MACHINE_NAME },
             repos: [{ url: `https://github.com/${repo}`, startingRef: headRef }],

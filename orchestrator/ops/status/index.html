@@ -192,6 +192,7 @@
             ${chip(run.status || "", status)}
             ${run.surface ? chip("", run.surface) : ""}
             ${run.repo ? chip("", shortRepo(run.repo)) : ""}
+            ${run.model ? chip("", run.model) : ""}
             ${chip("", run.startedAt ? age(run.startedAt) : "")}
             ${run.attempt > 1 ? chip("retry", `попытка ${run.attempt}/4`) : ""}
           </div>
