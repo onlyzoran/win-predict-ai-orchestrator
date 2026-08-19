@@ -48,6 +48,7 @@ orchestrator/
 - Прод админки `/var/www/win-predict-ai-admin` не монтировать в `--worker-dir`
 - Юниты: `cursor-worker.service`, `board-watch.timer` — см. [ops/README.md](ops/README.md)
 - Инвентарь слота: `/opt/cursor-workers/data/inventory.json` (снимок в Telegram при старте/квоте/финише)
+- Живой UI слота: `http://<vps>/ops/` (см. [ops/README.md](ops/README.md#статус-ui))
 - Проверка: `agent worker debug`, `systemctl list-timers board-watch.timer`, машина в [cursor.com/agents](https://cursor.com/agents)
 
 ## Модули

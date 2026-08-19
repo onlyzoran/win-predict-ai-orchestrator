@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Оркестратор — слот</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2314181f'/%3E%3Ccircle cx='8' cy='8' r='3.5' fill='%233ecfbe'/%3E%3C/svg%3E" />
+    <style>
+      :root {
+        --bg: #14181f;
+        --bg-2: #1c222c;
+        --raise: #242b36;
+        --line: rgba(232, 237, 233, 0.08);
+        --text: #e8ede9;
+        --muted: #8d978f;
+        --accent: #3ecfbe;
+        --accent-dim: rgba(62, 207, 190, 0.14);
+        --free: #8fb56f;
+        --free-dim: rgba(143, 181, 111, 0.14);
+        --warn: #d4a15a;
+        --warn-dim: rgba(212, 161, 90, 0.16);
+        --bad: #d4736a;
+        --bad-dim: rgba(212, 115, 106, 0.16);
+        --review: #7aa2d4;
+        --review-dim: rgba(122, 162, 212, 0.16);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        font: 15px/1.45 ui-sans-serif, system-ui, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(1200px 500px at 10% -10%, rgba(62, 207, 190, 0.07), transparent 55%),
+          var(--bg);
+      }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 48px; }
+      header {
+        display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+        margin-bottom: 22px;
+      }
+      .brand { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+      .brand strong { color: var(--text); letter-spacing: 0.04em; font-weight: 650; }
+      .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 20px;
+        align-items: stretch;
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 22px 24px;
+        margin-bottom: 18px;
+      }
+      .hero.busy { box-shadow: inset 3px 0 0 var(--accent); }
+      .hero.free { box-shadow: inset 3px 0 0 var(--free); }
+      .hero.stale { box-shadow: inset 3px 0 0 var(--warn); }
+      .kicker { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+      .headline { margin: 6px 0 4px; font-size: 32px; font-weight: 650; letter-spacing: -0.03em; }
+      .sub { color: var(--muted); }
+      .slots { display: flex; gap: 10px; align-items: center; }
+      .slot {
+        width: 92px; height: 92px; border-radius: 14px;
+        border: 1px solid var(--line); background: var(--raise);
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+        font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+      }
+      .slot b { font-size: 18px; letter-spacing: 0; text-transform: none; color: var(--text); }
+      .slot.on { border-color: rgba(62, 207, 190, 0.45); background: var(--accent-dim); color: var(--accent); }
+      .slot.on b { color: var(--accent); }
+      .slot.on { animation: pulse 2.8s ease-in-out infinite; }
+      @keyframes pulse { 50% { border-color: rgba(62, 207, 190, 0.9); } }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+      .card {
+        background: var(--bg-2); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 16px;
+        min-height: 140px;
+      }
+      .card h2 { margin: 0 0 12px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+      .empty { color: var(--muted); }
+      .task-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--muted); }
+      .task-title { margin: 4px 0 10px; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+      .chip {
+        font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--raise);
+        color: var(--text); border: 1px solid var(--line);
+      }
+      .chip.starting, .chip.running { background: var(--accent-dim); color: var(--accent); border-color: transparent; }
+      .chip.retry, .chip.quota { background: var(--warn-dim); color: var(--warn); border-color: transparent; }
+      .chip.error { background: var(--bad-dim); color: var(--bad); border-color: transparent; }
+      .chip.review { background: var(--review-dim); color: var(--review); border-color: transparent; }
+      .chip.goal { background: rgba(232, 237, 233, 0.08); }
+      .detail { color: var(--muted); font-size: 13px; margin: 0 0 10px; white-space: pre-wrap; word-break: break-word; }
+      .links { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+      .banner {
+        margin-bottom: 14px; padding: 10px 14px; border-radius: 10px;
+        background: var(--warn-dim); color: var(--warn); font-size: 13px;
+      }
+      .list { display: flex; flex-direction: column; gap: 8px; }
+      .row {
+        display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center;
+        padding: 10px 12px; border-radius: 10px; background: var(--raise);
+      }
+      .row .t { min-width: 0; }
+      .row .t a { color: var(--text); }
+      .row .t a:hover { color: var(--accent); }
+      .row .who { color: var(--muted); font-size: 12px; margin-top: 2px; }
+      .err { color: var(--bad); }
+      @media (max-width: 800px) {
+        .hero, .grid { grid-template-columns: 1fr; }
+        .headline { font-size: 26px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="brand">Win Predict · <strong>оркестратор</strong></div>
+        <div class="meta" id="clock">—</div>
+      </header>
+      <div id="banner" hidden class="banner"></div>
+      <section class="hero" id="hero">
+        <div>
+          <div class="kicker" id="machine">win-predict-vps</div>
+          <div class="headline" id="headline">Загрузка…</div>
+          <div class="sub" id="sub">опрос inventory.json</div>
+        </div>
+        <div class="slots" id="slots"></div>
+      </section>
+      <section class="grid">
+        <article class="card">
+          <h2>Слот сейчас</h2>
+          <div id="active">Загрузка…</div>
+        </article>
+        <article class="card">
+          <h2>Последний прогон</h2>
+          <div id="last">—</div>
+        </article>
+      </section>
+      <section class="grid">
+        <article class="card">
+          <h2>Доска · In Progress</h2>
+          <div id="progress" class="list"></div>
+        </article>
+        <article class="card">
+          <h2>Доска · Review</h2>
+          <div id="review" class="list"></div>
+        </article>
+      </section>
+    </div>
+    <script>
+      const STATUS_RU = {
+        starting: "запуск",
+        running: "работает",
+        retry: "повтор",
+        review: "ревью",
+        error: "ошибка",
+        quota: "квота",
+      };
+      const $ = (id) => document.getElementById(id);
+      const esc = (value) =>
+        String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[ch]));
+      const shortRepo = (repo) => String(repo || "").replace(/^onlyzoran\//, "");
+      const age = (iso) => {
+        const t = Date.parse(iso);
+        if (Number.isNaN(t)) return "?";
+        const sec = Math.max(0, Math.round((Date.now() - t) / 1000));
+        if (sec < 60) return `${sec}с`;
+        const min = Math.round(sec / 60);
+        if (min < 120) return `${min}м`;
+        return `${Math.round(min / 60)}ч`;
+      };
+      const chip = (cls, text) => `<span class="chip ${cls}">${esc(text)}</span>`;
+      const runView = (run, emptyText) => {
+        if (!run) return `<p class="empty">${emptyText}</p>`;
+        const status = STATUS_RU[run.status] || run.status;
+        const links = [];
+        if (run.issueUrl) links.push(`<a href="${esc(run.issueUrl)}">issue</a>`);
+        for (const url of run.prUrls || []) links.push(`<a href="${esc(url)}">PR</a>`);
+        const ended = run.endedAt ? ` · конец ${age(run.endedAt)} назад` : "";
+        return `
+          <div class="task-id">${esc(run.taskId)}</div>
+          <div class="task-title">${esc(run.title || run.taskId)}</div>
+          <div class="chips">
+            ${chip(run.status || "", status)}
+            ${run.surface ? chip("", run.surface) : ""}
+            ${run.repo ? chip("", shortRepo(run.repo)) : ""}
+            ${chip("", run.startedAt ? age(run.startedAt) : "")}
+            ${run.attempt > 1 ? chip("retry", `попытка ${run.attempt}/4`) : ""}
+          </div>
+          ${run.detail ? `<p class="detail">${esc(run.detail)}</p>` : ""}
+          <div class="links">${links.join(" · ")}${ended ? `<span class="empty">${ended}</span>` : ""}</div>
+        `;
+      };
+      const cards = (items, emptyText) => {
+        if (!items?.length) return `<p class="empty">${emptyText}</p>`;
+        return items
+          .map((item) => {
+            const who = [item.kind === "goal" ? "goal" : item.surface, shortRepo(item.repo), `#${item.number}`]
+              .filter(Boolean)
+              .join(" · ");
+            return `<div class="row">
+              ${chip(item.kind === "goal" ? "goal" : item.surface || "", item.kind === "goal" ? "goal" : item.surface || "child")}
+              <div class="t">
+                <a href="${esc(item.url)}">${esc(item.title)}</a>
+                <div class="who">${esc(who)}</div>
+              </div>
+            </div>`;
+          })
+          .join("");
+      };
+      let snapshot = null;
+      const paint = () => {
+        if (!snapshot) return;
+        const busy = (snapshot.active || []).length;
+        const slots = snapshot.slots || 1;
+        const staleMs = Date.now() - Date.parse(snapshot.updatedAt || "");
+        const stale = Number.isFinite(staleMs) && staleMs > 5 * 60 * 1000;
+        const hero = $("hero");
+        hero.className = `hero ${stale ? "stale" : busy ? "busy" : "free"}`;
+        $("machine").textContent = snapshot.machine || "win-predict-vps";
+        $("headline").textContent = stale ? "Вотчер молчит" : busy ? "Слот занят" : "Слот свободен";
+        $("sub").textContent = stale
+          ? `снимок ${age(snapshot.updatedAt)} назад`
+          : `${busy}/${slots} · обновлено ${age(snapshot.updatedAt)} назад`;
+        $("slots").innerHTML = Array.from({ length: slots }, (_, i) => {
+          const on = i < busy;
+          return `<div class="slot ${on ? "on" : ""}"><b>${on ? "busy" : "idle"}</b>${i + 1}</div>`;
+        }).join("");
+        $("active").innerHTML = busy
+          ? snapshot.active.map((run) => runView(run)).join('<hr style="border:0;border-top:1px solid var(--line);margin:16px 0">')
+          : runView(null, "Никто не держит машину");
+        $("last").innerHTML = runView(snapshot.last, "Прогонов ещё не было");
+        $("progress").innerHTML = cards(snapshot.board?.inProgress, "Пусто");
+        $("review").innerHTML = cards(snapshot.board?.review, "Пусто");
+        $("clock").textContent = new Date().toLocaleTimeString("ru-RU", { hour12: false });
+      };
+      const load = async () => {
+        try {
+          const res = await fetch(`inventory.json?t=${Date.now()}`, { cache: "no-store" });
+          if (!res.ok) throw new Error(`inventory.json ${res.status}`);
+          snapshot = await res.json();
+          $("banner").hidden = true;
+        } catch (err) {
+          const banner = $("banner");
+          banner.hidden = false;
+          banner.innerHTML = snapshot
+            ? `Нет свежего снимка: ${esc(err.message)}`
+            : `Нет <code>inventory.json</code>. На VPS: <code>orchestrator/ops/install-status.sh</code> и тик <code>board-watch</code>.`;
+        }
+        paint();
+      };
+      load();
+      setInterval(load, 4000);
+      setInterval(paint, 1000);
+    </script>
+  </body>
+</html>

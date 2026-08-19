@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,7 @@ const MACHINE_SLOTS = 1;
 const INVENTORY_PATH =
   process.env.ORCHESTRATOR_INVENTORY?.trim() ||
   join(process.env.HOME || tmpdir(), "data", "inventory.json");
+const STATUS_DIR_FALLBACK = "/var/www/orchestrator-status";
 const SLASH_WAIT_MS = 40 * 60 * 1000;
 const SLASH_POLL_MS = 20_000;
 const CLAIM_WAIT_MS = 15_000;
@@ -141,6 +142,9 @@ type InventoryStatus = "starting" | "running" | "retry" | "review" | "error" | "
 
 type InventoryRun = {
   taskId: string;
+  title?: string;
+  surface?: Surface;
+  repo?: string;
   issueUrl: string;
   status: InventoryStatus;
   attempt: number;
@@ -151,12 +155,27 @@ type InventoryRun = {
   detail?: string;
 };
 
+type InventoryCard = {
+  kind: "goal" | "child";
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  surface?: Surface;
+};
+
+type InventoryBoard = {
+  inProgress: InventoryCard[];
+  review: InventoryCard[];
+};
+
 type Inventory = {
   machine: string;
   slots: number;
   updatedAt: string;
   active: InventoryRun[];
   last?: InventoryRun & { endedAt: string };
+  board?: InventoryBoard;
 };
 
 function commentToken(): string {
@@ -229,13 +248,50 @@ async function notifyTelegram(text: string): Promise<void> {
   }
 }
 
+function emptyBoard(): InventoryBoard {
+  return { inProgress: [], review: [] };
+}
+
 function emptyInventory(): Inventory {
   return {
     machine: MACHINE_NAME,
     slots: MACHINE_SLOTS,
     updatedAt: new Date().toISOString(),
     active: [],
+    board: emptyBoard(),
   };
+}
+
+function normalizeBoard(value: Inventory["board"] | undefined): InventoryBoard {
+  if (!value || !Array.isArray(value.inProgress) || !Array.isArray(value.review)) {
+    return emptyBoard();
+  }
+  return { inProgress: value.inProgress, review: value.review };
+}
+
+function statusDir(): string {
+  const fromEnv = process.env.ORCHESTRATOR_STATUS_DIR?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    if (existsSync(STATUS_DIR_FALLBACK)) return STATUS_DIR_FALLBACK;
+  } catch {
+    /* no public copy */
+  }
+  return "";
+}
+
+function writePublicStatus(inventory: Inventory): void {
+  const dir = statusDir();
+  if (!dir) return;
+  try {
+    mkdirSync(dir, { recursive: true });
+    const dest = join(dir, "inventory.json");
+    const tmp = `${dest}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(inventory, null, 2)}\n`, { mode: 0o644 });
+    renameSync(tmp, dest);
+  } catch (err) {
+    console.warn(`status copy: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 function readInventory(): Inventory {
@@ -248,6 +304,7 @@ function readInventory(): Inventory {
       updatedAt: parsed.updatedAt || new Date().toISOString(),
       active: parsed.active,
       last: parsed.last,
+      board: normalizeBoard(parsed.board),
     };
   } catch {
     return emptyInventory();
@@ -263,10 +320,12 @@ function writeInventory(inventory: Inventory): Inventory {
   inventory.machine = MACHINE_NAME;
   inventory.slots = MACHINE_SLOTS;
   inventory.updatedAt = new Date().toISOString();
+  inventory.board = normalizeBoard(inventory.board);
   mkdirSync(dirname(INVENTORY_PATH), { recursive: true });
   const tmp = `${INVENTORY_PATH}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(inventory, null, 2)}\n`);
+  writeFileSync(tmp, `${JSON.stringify(inventory, null, 2)}\n`, { mode: 0o644 });
   renameSync(tmp, INVENTORY_PATH);
+  writePublicStatus(inventory);
   return inventory;
 }
 
@@ -282,7 +341,8 @@ function formatInventorySnapshot(inventory: Inventory, event: string): string {
   if (inventory.active.length) {
     for (const run of inventory.active) {
       const attempt = run.attempt > 1 ? ` · попытка ${run.attempt}/4` : "";
-      lines.push(`${run.status} · ${run.taskId} · ${formatRunAge(run.startedAt)}${attempt}`);
+      const title = run.title ? ` · ${run.title}` : "";
+      lines.push(`${run.status} · ${run.taskId}${title} · ${formatRunAge(run.startedAt)}${attempt}`);
       if (run.detail) lines.push(run.detail.slice(0, 300));
       lines.push(run.issueUrl);
     }
@@ -1345,6 +1405,9 @@ async function runMachineWorker(
   addToProject(issueUrl, "In Progress", token);
   const occupancy: InventoryRun = {
     taskId: task.id,
+    title: task.title,
+    surface: task.surface,
+    repo: task.repo,
     issueUrl,
     status: "starting",
     attempt: 1,
@@ -1868,6 +1931,20 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
   }
 }
 
+function cardFromIssue(item: BoardIssue): InventoryCard {
+  const fromLabel = item.labels.find((name) => isSurface(name));
+  const kind: InventoryCard["kind"] =
+    item.repo === GOAL_REPO && item.labels.includes("goal") ? "goal" : "child";
+  return {
+    kind,
+    repo: item.repo,
+    number: item.number,
+    title: item.title,
+    url: item.url,
+    ...(fromLabel && isSurface(fromLabel) ? { surface: fromLabel } : {}),
+  };
+}
+
 async function watchBoard(): Promise<void> {
   if (!process.env.TELEGRAM_BOT_TOKEN?.trim() || !process.env.TELEGRAM_CHAT_ID?.trim()) {
     console.warn("telegram: нет TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID — в чат не пишу");
@@ -1877,9 +1954,13 @@ async function watchBoard(): Promise<void> {
     console.log(`inventory ${INVENTORY_PATH}: ${inventory.active.length}/${inventory.slots}`);
     const token = writeToken();
     if (!token) throw new Error("нет секрета ORCHESTRATOR_GITHUB_TOKEN");
-    const items = listProjectIssues(token).filter(
-      (item) => item.status === "In Progress" && !item.closed,
-    );
+    const all = listProjectIssues(token);
+    inventory.board = {
+      inProgress: all.filter((item) => item.status === "In Progress" && !item.closed).map(cardFromIssue),
+      review: all.filter((item) => item.status === "Review" && !item.closed).map(cardFromIssue),
+    };
+    writeInventory(inventory);
+    const items = all.filter((item) => item.status === "In Progress" && !item.closed);
     const goals = items.filter((item) => item.repo === GOAL_REPO && item.labels.includes("goal"));
     const children = items.filter((item) => isRepo(item.repo));
     console.log(`watch: ${goals.length} goal, ${children.length} child in In Progress`);

@@ -23,4 +23,9 @@ if [[ ! -d node_modules || "$lock_before" != "$lock_after" ]]; then
   npm ci
 fi
 
+STATUS_DIR="${ORCHESTRATOR_STATUS_DIR:-/var/www/orchestrator-status}"
+if [[ -d $STATUS_DIR && -f $ROOT/orchestrator/ops/status/index.html ]]; then
+  cp -f "$ROOT/orchestrator/ops/status/index.html" "$STATUS_DIR/index.html"
+fi
+
 exec npm run watch

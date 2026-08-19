@@ -48,3 +48,27 @@ journalctl -u board-watch.service -n 50 --no-pager
 В логе пустой доски: `watch: 0 goal, 0 child in In Progress`. Карточка в In Progress после Review: `watch: 1 child` (или `1 goal`) и дальше запуск воркера.
 
 Инвентарь слота (кто занял машину): `/opt/cursor-workers/data/inventory.json`. Файл появляется на тике вотчера (даже если слот свободен). При смене слота снимок уходит в Telegram (`слот 1/1` / `свободно`).
+
+## Статус UI
+
+Отдельная страница на том же IP, не внутри Nuxt: [http://202.71.15.138/ops/](http://202.71.15.138/ops/). Слот, текущая задача, последний прогон, карточки In Progress / Review. Опрос каждые 4 с.
+
+Один раз от root, после того как этот репо уже на `origin/main`:
+
+```bash
+chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/install-status.sh
+/opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/install-status.sh
+```
+
+Скрипт создаёт `/var/www/orchestrator-status` и nginx snippet. Дальше вручную: в `server { listen 80; }` (тот, что отдаёт Nuxt) **до** `location /` добавь:
+
+```nginx
+include /etc/nginx/snippets/orchestrator-status.conf;
+```
+
+```bash
+nginx -t && systemctl reload nginx
+systemctl start board-watch.service
+```
+
+`/status` и `/orchestrator` заняты SPA — не использовать. Если править Nuxt-сайт не хочется: `ln -s /etc/nginx/sites-available/orchestrator-status /etc/nginx/sites-enabled/` и открыть порт **8787** → `http://202.71.15.138:8787/`.
