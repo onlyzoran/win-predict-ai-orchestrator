@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent, CursorAgentError } from "@cursor/sdk";
+import {
+  matchExistingChild,
+  parentLine,
+  taskMarker,
+  type ChildIssueRef,
+} from "./child-issue.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GOAL_REPO = "onlyzoran/win-predict-ai-orchestrator";
@@ -847,26 +853,47 @@ function fetchIssue(repo: string, number: number, token: string): IssueCommentEv
   };
 }
 
-function findExistingChild(task: Task, goalNumber: number, token: string): string | undefined {
-  const parent = `Parent: ${GOAL_REPO}#${goalNumber}`;
-  const marker = `<!-- orchestrator-task:${task.id} -->`;
+function findExistingChild(task: Task, goalNumber: number, token: string): ChildIssueRef | undefined {
   const raw = gh(
-    ["issue", "list", "-R", task.repo, "--state", "open", "--limit", "50", "--json", "url,title,body"],
+    [
+      "issue",
+      "list",
+      "-R",
+      task.repo,
+      "--state",
+      "all",
+      "--limit",
+      "100",
+      "--json",
+      "url,title,body,state",
+    ],
     token,
   );
-  const items = JSON.parse(raw) as Array<{ url: string; title: string; body: string }>;
-  const marked = items.find((item) => item.body.includes(marker) && item.body.includes(parent));
-  if (marked) return marked.url;
-  const titled = items.find((item) => item.body.includes(parent) && item.title === task.title);
-  if (titled) return titled.url;
-  const withParent = items.filter((item) => item.body.includes(parent));
-  return withParent.length === 1 ? withParent[0].url : undefined;
+  const items = JSON.parse(raw) as Array<{
+    url: string;
+    title: string;
+    body: string;
+    state: string;
+  }>;
+  return matchExistingChild(items, task, parentLine(GOAL_REPO, goalNumber));
+}
+
+function resolveChild(
+  task: Task,
+  goalNumber: number,
+  created: Map<string, string>,
+  token: string,
+): ChildIssueRef | undefined {
+  const found = findExistingChild(task, goalNumber, token);
+  if (found) return found;
+  const url = created.get(task.id);
+  return url ? { url, closed: false } : undefined;
 }
 
 function createChildIssue(task: Task, goalNumber: number, created: Map<string, string>, token: string): string {
   ensureLabel(task.repo, task.surface, token);
   const existing = findExistingChild(task, goalNumber, token);
-  if (existing) return existing;
+  if (existing) return existing.url;
   const deps = task.depends_on
     .map((id) => created.get(id))
     .filter((url): url is string => Boolean(url));
@@ -875,13 +902,13 @@ function createChildIssue(task: Task, goalNumber: number, created: Map<string, s
       ? `Воркер: комментарий \`${task.trigger.command}\` от диспетчера.`
       : `Воркер: My Machines (\`worker.md\`) на \`${MACHINE_NAME}\`.`;
   const body = [
-    `<!-- orchestrator-task:${task.id} -->`,
+    taskMarker(task.id),
     task.body.trim(),
     "",
     triggerLine,
     `Критерий куска: ${task.done_when}`,
     deps.length ? `Зависит от: ${deps.join(", ")}` : "",
-    `Parent: ${GOAL_REPO}#${goalNumber}`,
+    parentLine(GOAL_REPO, goalNumber),
   ]
     .filter(Boolean)
     .join("\n");
@@ -1093,9 +1120,10 @@ async function maybePromoteGoal(childBody: string, token: string): Promise<void>
   const plan = extractStoredPlan(comments, goalNumber);
   if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return;
   for (const task of plan.tasks) {
-    const url = findExistingChild(task, plan.goal_number, token);
-    if (!url) return;
-    const { repo, number } = parseIssueUrl(url);
+    const child = findExistingChild(task, plan.goal_number, token);
+    if (!child) return;
+    if (child.closed) continue;
+    const { repo, number } = parseIssueUrl(child.url);
     const state = lastDispatchState(listIssueComments(repo, number, token));
     if (state?.phase !== "review") return;
     if (state.reviewVerdict === "changes") return;
@@ -1472,19 +1500,26 @@ async function dispatchPlan(
   );
   const notes: string[] = [];
   for (const task of ordered) {
-    const url = created.get(task.id) ?? findExistingChild(task, plan.goal_number, token);
-    if (!url) {
+    const child = resolveChild(task, plan.goal_number, created, token);
+    if (!child) {
       notes.push(`\`${task.id}\` — нет child issue`);
+      continue;
+    }
+    const url = child.url;
+    if (child.closed) {
+      notes.push(`${url} — уже закрыт`);
       continue;
     }
     try {
       if (task.depends_on.length) {
         const unmet = task.depends_on.filter((id) => {
           const depTask = plan.tasks.find((t) => t.id === id);
-          const depUrl =
-            created.get(id) ??
-            (depTask ? findExistingChild(depTask, plan.goal_number, token) : undefined);
-          return !depUrl || findOpenPrsForIssue(depUrl, token).length === 0;
+          const dep = depTask
+            ? resolveChild(depTask, plan.goal_number, created, token)
+            : undefined;
+          if (!dep) return true;
+          if (dep.closed) return false;
+          return findOpenPrsForIssue(dep.url, token).length === 0;
         });
         if (unmet.length) {
           notes.push(`${url} — жду PR у ${unmet.join(", ")}`);
@@ -1579,6 +1614,10 @@ function loadEvent(): IssueCommentEvent {
   return JSON.parse(readFileSync(path, "utf8")) as IssueCommentEvent;
 }
 
+function isIdleDispatchNote(note: string): boolean {
+  return note.includes("уже запускали") || note.includes("уже закрыт");
+}
+
 async function commentDispatch(
   goalNumber: number,
   goalUrl: string,
@@ -1586,10 +1625,11 @@ async function commentDispatch(
   token: string,
 ): Promise<boolean> {
   const failed = notes.some((n) => n.includes("ошибка") || n.includes("нет child"));
-  const allSkipped = notes.length > 0 && notes.every((n) => n.includes("уже запускали"));
+  const allSkipped = notes.length > 0 && notes.every(isIdleDispatchNote);
   const machineDone = notes.some((n) => /\/pull\/\d+/.test(n) || n.includes(" — machine ") || n.includes(" — review "));
   const bounced = notes.some((n) => n.includes("review changes"));
-  const toReview = Boolean(token) && !failed && !allSkipped && machineDone && !bounced;
+  const waiting = notes.some((n) => n.includes("жду PR"));
+  const toReview = Boolean(token) && !failed && !allSkipped && machineDone && !bounced && !waiting;
   if (toReview) addToProject(goalUrl, "Review", token);
   const prefix = failed
     ? formatDispatchComment(
@@ -1871,7 +1911,7 @@ async function commentDispatchFromStored(
   token: string,
 ): Promise<void> {
   const notes = await dispatchPlan(stored, new Map(), token, { skipIfOpenPr: true });
-  const allSkipped = notes.length > 0 && notes.every((n) => n.includes("уже запускали"));
+  const allSkipped = notes.length > 0 && notes.every(isIdleDispatchNote);
   if (allSkipped) {
     commentOnGoal(
       issue.number,

@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "orchestrate": "tsx orchestrator/src/run.ts",
-    "watch": "tsx orchestrator/src/run.ts watch"
+    "watch": "tsx orchestrator/src/run.ts watch",
+    "test": "tsx --test orchestrator/src/child-issue.test.ts"
   },
   "engines": {
     "node": ">=22.13"

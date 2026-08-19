@@ -46,6 +46,6 @@ Goal — одна высокоуровневая цель. Живёт тольк
 
 ## Child issues
 
-Одно child issue — один рабочий репо. Диспетчер после плана запускает воркера: My Machines `worker.md` (ui/app/admin/data) или slash `/new-icon`. Затем local-ревьюер читает PR и пишет вердикт в **issue**: pass/blocked → Review, changes → снова воркер. Правки человека — issue + колонка In Progress, не комментарий в PR.
+Одно child issue — один `id` в плане. Несколько независимых кусков в одном репо — несколько issues, диспетчер не схлопывает их в одну карточку. Диспетчер после плана запускает воркера: My Machines `worker.md` (ui/app/admin/data) или slash `/new-icon`. Затем local-ревьюер читает PR и пишет вердикт в **issue**: pass/blocked → Review, changes → снова воркер. Правки человека — issue + колонка In Progress, не комментарий в PR. Закрытый child (смерженный кусок) считается готовым: его не переоткрывают и не блокируют им следующие задачи.
 
 Как режется цель: [orchestrator/prompts/manager.md](../orchestrator/prompts/manager.md). Форма плана: [orchestrator/schema/plan.schema.json](../orchestrator/schema/plan.schema.json).
