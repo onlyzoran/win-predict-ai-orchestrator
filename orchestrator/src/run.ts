@@ -1127,17 +1127,25 @@ async function settleWithReviewer(
   },
 ): Promise<string> {
   const { repo, number } = parseIssueUrl(issueUrl);
-  const prLines = ctx.prUrls.length
-    ? ctx.prUrls.map((url) => `- ${url}`).join("\n")
-    : "- (URL PR не найден)";
+  // Fallback: worker иногда забывает вставить URL PR в финальный summary.
+  // Тогда берём открытые PR по child issue и отдаём ревьюеру их URL.
+  let prUrls = ctx.prUrls;
+  if (!prUrls.length) {
+    try {
+      prUrls = findOpenPrsForIssue(issueUrl, token);
+    } catch {
+      /* ignore fallback error */
+    }
+  }
+  const prLines = prUrls.length ? prUrls.map((url) => `- ${url}`).join("\n") : "- (URL PR не найден)";
   const baseState = {
     agentId: ctx.agentId,
     runId: ctx.runId,
-    prUrls: ctx.prUrls,
+    prUrls,
     headRef: ctx.headRef,
   };
 
-  if (!ctx.prUrls.length) {
+  if (!prUrls.length) {
     addToProject(issueUrl, "Review", token);
     commentOnIssue(
       repo,
@@ -1173,7 +1181,7 @@ async function settleWithReviewer(
     review = await runReviewer(
       task,
       issueUrl,
-      ctx.prUrls,
+      prUrls,
       token,
       `${roundCap}${iconGate}\n\nСдача воркера:\n${ctx.source}`,
     );
@@ -1223,7 +1231,7 @@ async function settleWithReviewer(
       token,
     );
     await notifyTelegram(`Ревьюер: правки ${task.id}\n${issueUrl}\n${review.summary}`);
-    return `${issueUrl} — review changes — ${ctx.prUrls.join(" ")}`;
+    return `${issueUrl} — review changes — ${prUrls.join(" ")}`;
   }
 
   addToProject(issueUrl, "Review", token);
@@ -1241,9 +1249,9 @@ async function settleWithReviewer(
     token,
   );
   await notifyTelegram(
-    `Ревьюер: ${review.verdict} ${task.id}\n${issueUrl}\n${review.summary}\n${ctx.prUrls.join("\n")}`,
+    `Ревьюер: ${review.verdict} ${task.id}\n${issueUrl}\n${review.summary}\n${prUrls.join("\n")}`,
   );
-  return `${issueUrl} — review ${review.verdict} — ${ctx.prUrls.join(" ")}`;
+  return `${issueUrl} — review ${review.verdict} — ${prUrls.join(" ")}`;
 }
 
 function taskFromBoardIssue(item: BoardIssue): Task {
