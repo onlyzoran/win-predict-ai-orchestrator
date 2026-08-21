@@ -59,4 +59,4 @@ orchestrator/
 | decompose | local `Agent.prompt` |
 | dispatch | issues + slash `/new-icon` или My Machines `worker.md` |
 | review | local `Agent.prompt` (`reviewer.md`) по PR; pass/blocked → Review, changes → воркер MODE B |
-| watch | systemd timer на VPS: In Progress после Review → оркестратор/воркер; Ready to Release → ченджлог + merge → Done |
+| watch | systemd timer на VPS: In Progress (первый старт или после Review) → оркестратор/воркер; Ready to Release → ченджлог + merge → Done |

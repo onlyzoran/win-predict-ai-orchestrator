@@ -560,7 +560,8 @@ function shouldWakeChild(
     if (slotFailedFor(issueUrl)) return true;
     return !isActiveWorking(state);
   }
-  return false;
+  // Нет фазы — ручной child в In Progress (первый старт).
+  return !state?.phase;
 }
 
 function formatDispatchComment(state: DispatchState, lines: string[]): string {
