@@ -2447,7 +2447,7 @@ class ReleaseConflictError extends Error {
 }
 
 function isConflictMessage(message: string): boolean {
-  return /not mergeable|cannot be cleanly created|merge conflict|CONFLICTING|\bDIRTY\b|pull request is not mergeable/i.test(
+  return /not mergeable|cannot be cleanly created|cannot update pr branch|due to conflicts?|merge conflicts?|\bconflicts?\b|CONFLICTING|\bDIRTY\b|pull request is not mergeable/i.test(
     message,
   );
 }
@@ -2668,6 +2668,17 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
     return false;
   }
   const prUrls = findPrsForRelease(item.url, state, token);
+  // Уже ловили конфликт, но карточка ещё в Ready to Release — сразу в In Progress.
+  if (lastReleaseConflictNote(comments)) {
+    await bounceReleaseConflict(
+      item,
+      prUrls,
+      ["повторный конфликт в Ready to Release"],
+      "Cannot update / merge due to conflicts (см. предыдущий комментарий)",
+      token,
+    );
+    return false;
+  }
   await notifyTelegram(`Доска: Ready to Release ${item.repo} #${item.number}\n${item.url}`);
   claimReleasing(item.repo, item.number, token, { prUrls });
   await sleep(CLAIM_WAIT_MS);
