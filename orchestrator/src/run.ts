@@ -49,6 +49,8 @@ const REVIEW_MAX_CHANGES = 2;
 const REVIEW_CHANGES_DEBOUNCE_MS = 60_000;
 const PR_DIFF_MAX_CHARS = 100_000;
 const RESOURCE_BACKOFF_MS = 15 * 60 * 1000;
+const PR_MERGEABLE_POLL_MS = 5_000;
+const PR_MERGEABLE_POLLS = 6;
 const MACHINE_NAME = process.env.CURSOR_MACHINE_NAME?.trim() || "win-predict-vps";
 const MACHINE_SLOTS = 1;
 const INVENTORY_PATH =
@@ -669,7 +671,19 @@ function lastReviewerChanges(comments: IssueComment[]): string {
 }
 
 function notesForWorker(comments: IssueComment[]): string {
-  return [lastReviewerChanges(comments), notesAfterLastReview(comments)].filter(Boolean).join("\n\n---\n\n");
+  return [lastReviewerChanges(comments), notesAfterLastReview(comments), lastReleaseConflictNote(comments)]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+}
+
+function lastReleaseConflictNote(comments: IssueComment[]): string {
+  for (const comment of [...comments].reverse()) {
+    const state = parseDispatchState(comment.body);
+    if (state?.phase !== "error") continue;
+    if (!/конфликт|conflict|не mergeable|cannot be cleanly created/i.test(comment.body)) continue;
+    return stripDispatchChrome(comment.body);
+  }
+  return "";
 }
 
 function countReviewChanges(comments: IssueComment[]): number {
@@ -2190,7 +2204,10 @@ async function runGoalRevision(
 }
 
 function childWakeReason(state: DispatchState | undefined, comments: IssueComment[]): string {
-  if (state?.phase === "error") return "после ошибки";
+  if (state?.phase === "error") {
+    if (lastReleaseConflictNote(comments)) return "после конфликта релиза";
+    return "после ошибки";
+  }
   if (state?.phase === "review" && state.reviewVerdict === "changes") return "после ревьюера";
   if (state?.phase === "review") return "после Review";
   if (state?.phase === "reviewing") return "повтор: ревьюер завис";
@@ -2418,35 +2435,199 @@ function updateChangelogForPr(
   return { updated: true, note: "CHANGELOG.md обновлён" };
 }
 
-function mergePullRequest(prUrl: string, token: string): string {
-  const { repo, number } = parsePrUrl(prUrl);
-  const state = gh(
-    ["pr", "view", String(number), "-R", repo, "--json", "state,mergeable,title,url"],
-    token,
+class ReleaseConflictError extends Error {
+  readonly kind = "conflict" as const;
+  constructor(
+    message: string,
+    readonly prUrl: string,
+  ) {
+    super(message);
+    this.name = "ReleaseConflictError";
+  }
+}
+
+function isConflictMessage(message: string): boolean {
+  return /not mergeable|cannot be cleanly created|merge conflict|CONFLICTING|\bDIRTY\b|pull request is not mergeable/i.test(
+    message,
   );
-  const pr = JSON.parse(state) as {
-    state: string;
-    mergeable: string;
-    title: string;
-    url: string;
-  };
-  if (pr.state === "MERGED") return `${pr.url} уже смержен`;
-  if (pr.state !== "OPEN") throw new Error(`PR ${pr.url} в состоянии ${pr.state}`);
-  gh(
+}
+
+function isReleaseConflict(err: unknown): boolean {
+  return (
+    err instanceof ReleaseConflictError ||
+    (err instanceof Error && isConflictMessage(err.message))
+  );
+}
+
+type PrMergeView = {
+  state: string;
+  mergeable: string;
+  mergeStateStatus: string;
+  title: string;
+  url: string;
+};
+
+function viewPrMerge(repo: string, number: number, token: string): PrMergeView {
+  const raw = gh(
     [
       "pr",
-      "merge",
+      "view",
       String(number),
       "-R",
       repo,
-      "--squash",
-      "--delete-branch",
-      "--subject",
-      pr.title,
+      "--json",
+      "state,mergeable,mergeStateStatus,title,url",
     ],
     token,
   );
-  return `${pr.url} смержен (squash)`;
+  return JSON.parse(raw) as PrMergeView;
+}
+
+function updatePrFromBase(repo: string, number: number, token: string): string {
+  try {
+    gh(["pr", "update-branch", String(number), "-R", repo], token);
+    return "подтянул base в ветку PR";
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/already up.to.date|not out of date|is not behind/i.test(message)) {
+      return "ветка уже актуальна относительно base";
+    }
+    if (isConflictMessage(message)) {
+      throw new ReleaseConflictError(
+        `${repo}#${number}: конфликт при update-branch — ${message.slice(0, 240)}`,
+        `https://github.com/${repo}/pull/${number}`,
+      );
+    }
+    throw err;
+  }
+}
+
+function preparePrForMerge(prUrl: string, token: string): { pr: PrMergeView; notes: string[] } {
+  const { repo, number } = parsePrUrl(prUrl);
+  const notes: string[] = [];
+  let pr = viewPrMerge(repo, number, token);
+  if (pr.state === "MERGED") return { pr, notes: ["уже смержен"] };
+  if (pr.state !== "OPEN") throw new Error(`PR ${pr.url} в состоянии ${pr.state}`);
+
+  const behindOrUnknown =
+    pr.mergeStateStatus === "BEHIND" ||
+    pr.mergeStateStatus === "UNKNOWN" ||
+    pr.mergeable === "UNKNOWN";
+  const dirty =
+    pr.mergeable === "CONFLICTING" ||
+    pr.mergeStateStatus === "DIRTY";
+
+  if (behindOrUnknown || dirty) {
+    notes.push(updatePrFromBase(repo, number, token));
+    for (let attempt = 0; attempt < PR_MERGEABLE_POLLS; attempt++) {
+      sleepSync(PR_MERGEABLE_POLL_MS);
+      pr = viewPrMerge(repo, number, token);
+      if (pr.state === "MERGED") return { pr, notes: [...notes, "уже смержен"] };
+      if (pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY") {
+        throw new ReleaseConflictError(
+          `${pr.url}: конфликт с ${pr.mergeStateStatus || pr.mergeable}`,
+          pr.url,
+        );
+      }
+      if (pr.mergeable === "MERGEABLE" && pr.mergeStateStatus !== "BEHIND") break;
+      if (attempt === Math.floor(PR_MERGEABLE_POLLS / 2)) {
+        notes.push(updatePrFromBase(repo, number, token));
+      }
+    }
+  }
+
+  pr = viewPrMerge(repo, number, token);
+  if (pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY") {
+    throw new ReleaseConflictError(
+      `${pr.url}: всё ещё конфликт (${pr.mergeStateStatus || pr.mergeable})`,
+      pr.url,
+    );
+  }
+  return { pr, notes };
+}
+
+function mergePullRequest(prUrl: string, token: string): string {
+  const { repo, number } = parsePrUrl(prUrl);
+  const prepared = preparePrForMerge(prUrl, token);
+  const prepNote = prepared.notes.length ? `${prepared.notes.join("; ")}; ` : "";
+  if (prepared.pr.state === "MERGED") return `${prepared.pr.url} уже смержен`;
+
+  try {
+    gh(
+      [
+        "pr",
+        "merge",
+        String(number),
+        "-R",
+        repo,
+        "--squash",
+        "--delete-branch",
+        "--subject",
+        prepared.pr.title,
+      ],
+      token,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (isConflictMessage(message)) {
+      // Ещё одна попытка: base мог уехать между poll и merge.
+      try {
+        updatePrFromBase(repo, number, token);
+        sleepSync(PR_MERGEABLE_POLL_MS);
+        const again = viewPrMerge(repo, number, token);
+        if (again.mergeable === "CONFLICTING" || again.mergeStateStatus === "DIRTY") {
+          throw new ReleaseConflictError(`${again.url}: ${message.slice(0, 240)}`, again.url);
+        }
+        gh(
+          [
+            "pr",
+            "merge",
+            String(number),
+            "-R",
+            repo,
+            "--squash",
+            "--delete-branch",
+            "--subject",
+            again.title,
+          ],
+          token,
+        );
+        return `${prepNote}${again.url} смержен (squash, после update-branch)`;
+      } catch (retryErr) {
+        if (isReleaseConflict(retryErr)) throw retryErr;
+        throw new ReleaseConflictError(
+          `${prUrl}: ${message.slice(0, 240)}`,
+          prUrl,
+        );
+      }
+    }
+    throw err;
+  }
+  return `${prepNote}${prepared.pr.url} смержен (squash)`;
+}
+
+async function bounceReleaseConflict(
+  item: BoardIssue,
+  prUrls: string[],
+  notes: string[],
+  message: string,
+  token: string,
+): Promise<void> {
+  addToProject(item.url, "In Progress", token);
+  commentOnIssue(
+    item.repo,
+    item.number,
+    formatDispatchComment(
+      { phase: "error", prUrls, at: new Date().toISOString() },
+      [
+        "**Релиз: конфликт с main.** Карточка → In Progress. Воркер MODE B: подтяни `main` в ветку PR, разреши конфликты, запушь. После ревьюера снова Review → Ready to Release.",
+        ...notes.map((n) => `- ${n}`),
+        `- ${message.slice(0, 400)}`,
+      ],
+    ),
+    token,
+  );
+  await notifyTelegram(`Релиз: конфликт → In Progress\n${item.url}\n${message.slice(0, 400)}`);
 }
 
 function findPrsForRelease(issueUrl: string, state: DispatchState | undefined, token: string): string[] {
@@ -2531,13 +2712,17 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         notes.push(`${prUrl}: ошибка — ${message.slice(0, 300)}`);
+        if (isReleaseConflict(err)) {
+          await bounceReleaseConflict(item, prUrls, notes, message, token);
+          return false;
+        }
         commentOnIssue(
           item.repo,
           item.number,
           formatDispatchComment(
             { phase: "error", prUrls, at: new Date().toISOString() },
             [
-              "**Релиз упал.** Карточка в Ready to Release — поправь и подожди следующий тик, или верни в Review.",
+              "**Релиз упал.** Карточка в Ready to Release — повторю на следующем тике (CI/сеть), или верни в Review.",
               ...notes.map((n) => `- ${n}`),
             ],
           ),

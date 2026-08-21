@@ -25,7 +25,7 @@ orchestrator/
    - `slash` `/new-icon` → комментарий, **ждёт PR**
    - `ui` / `sdk` → My Machines `win-predict-vps` (`worker.md`)
 3. После PR local-ревьюер (`reviewer.md`): **pass** / **blocked** → child **Review**; **changes** → child остаётся **In Progress**, воркер MODE B (макс. 2 круга, потом blocked). Goal → **Review**, когда все child pass или blocked.
-4. Приёмка: человек **Review → Ready to Release**. Вотчер: ченджлог (если есть) → `gh pr merge --squash` → **Done**. Goal в Ready to Release релизит оставшиеся open child.
+4. Приёмка: человек **Review → Ready to Release**. Вотчер: ченджлог (если есть) → подтянуть base в PR → `gh pr merge --squash` → **Done**. Конфликт с main → **In Progress** (воркер MODE B). Goal в Ready to Release релизит оставшиеся open child.
 5. Правка: комментарий в **issue** (не в PR) и карточка **Review → In Progress**. Таймер `board-watch` на `win-predict-vps` (каждые 2 мин) поднимает Goal → оркестратор или child → воркер MODE B (та же ветка PR). Иконки (`/new-icon`) на VPS не едут: выбор A–D — комментарий в PR. Если VPS молчит — `systemctl start board-watch.service`.
 
 Если план уже есть, повторный `/orchestrate` только догоняет воркеров (не плодит issues). С нуля: `/orchestrate redo`. Ошибка старта воркера **не** ставит `DISPATCH_MARKER` на Goal — `/orchestrate` или возврат в In Progress можно повторить.
