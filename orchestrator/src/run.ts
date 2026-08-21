@@ -679,9 +679,17 @@ function notesForWorker(comments: IssueComment[]): string {
 function lastReleaseConflictNote(comments: IssueComment[]): string {
   for (const comment of [...comments].reverse()) {
     const state = parseDispatchState(comment.body);
-    if (state?.phase !== "error") continue;
-    if (!/конфликт|conflict|не mergeable|cannot be cleanly created/i.test(comment.body)) continue;
-    return stripDispatchChrome(comment.body);
+    if (!state) continue;
+    // Только последний dispatch: старые конфликты не должны снова слать в In Progress.
+    if (
+      state.phase === "error" &&
+      /конфликт|conflict|не mergeable|cannot be cleanly created|cannot update pr branch/i.test(
+        comment.body,
+      )
+    ) {
+      return stripDispatchChrome(comment.body);
+    }
+    return "";
   }
   return "";
 }
