@@ -23,6 +23,8 @@
         --bad-dim: rgba(212, 115, 106, 0.16);
         --review: #7aa2d4;
         --review-dim: rgba(122, 162, 212, 0.16);
+        --ready: #8fb56f;
+        --ready-dim: rgba(143, 181, 111, 0.16);
       }
       * { box-sizing: border-box; }
       html, body { margin: 0; min-height: 100%; }
@@ -148,6 +150,12 @@
           <div id="review" class="list"></div>
         </article>
       </section>
+      <section class="grid" style="grid-template-columns: 1fr">
+        <article class="card">
+          <h2>Доска · Ready to Release</h2>
+          <div id="ready" class="list"></div>
+        </article>
+      </section>
     </div>
     <script>
       const STATUS_RU = {
@@ -241,6 +249,7 @@
         $("last").innerHTML = runView(snapshot.last, "Прогонов ещё не было");
         $("progress").innerHTML = cards(snapshot.board?.inProgress, "Пусто");
         $("review").innerHTML = cards(snapshot.board?.review, "Пусто");
+        $("ready").innerHTML = cards(snapshot.board?.readyToRelease, "Пусто");
         $("clock").textContent = new Date().toLocaleTimeString("ru-RU", { hour12: false });
       };
       const load = async () => {

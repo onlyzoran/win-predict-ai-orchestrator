@@ -15,11 +15,22 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GOAL_REPO = "onlyzoran/win-predict-ai-orchestrator";
 const PROJECT_ID = "PVT_kwHOAom_KM4BgVLq";
 const STATUS_FIELD_ID = "PVTSSF_lAHOAom_KM4BgVLqzhahv2g";
-const STATUS_OPTION_ID = {
+const STATUS_NAMES = ["Inbox", "In Progress", "Review", "Ready to Release", "Done"] as const;
+type StatusName = (typeof STATUS_NAMES)[number];
+/** Fallback, пока GraphQL не отдал актуальные option id (в т.ч. Ready to Release / Done). */
+const STATUS_OPTION_FALLBACK: Partial<Record<StatusName, string>> = {
   Inbox: "f75ad846",
   "In Progress": "47fc9ee4",
   Review: "57240b08",
-} as const;
+};
+const STATUS_OPTION_COLOR: Record<StatusName, string> = {
+  Inbox: "BLUE",
+  "In Progress": "YELLOW",
+  Review: "PURPLE",
+  "Ready to Release": "GREEN",
+  Done: "GREEN",
+};
+let statusOptionCache: Partial<Record<StatusName, string>> | null = null;
 const PLAN_MARKER = "<!-- orchestrator-plan -->";
 const DISPATCH_MARKER = "<!-- orchestrator-dispatch -->";
 const STATE_RE = /<!-- orchestrator-state:(.*?) -->/;
@@ -69,7 +80,7 @@ type Trigger =
   | { type: "slash"; command: "/ui-agent" | "/new-icon" }
   | { type: "sdk" }
   | { type: "issue_only" };
-type DispatchPhase = "working" | "reviewing" | "review" | "error";
+type DispatchPhase = "working" | "reviewing" | "review" | "releasing" | "error";
 type ReviewVerdict = "pass" | "changes" | "blocked";
 type DispatchState = {
   phase: DispatchPhase;
@@ -168,6 +179,7 @@ type InventoryCard = {
 type InventoryBoard = {
   inProgress: InventoryCard[];
   review: InventoryCard[];
+  readyToRelease: InventoryCard[];
 };
 
 type Inventory = {
@@ -250,7 +262,7 @@ async function notifyTelegram(text: string): Promise<void> {
 }
 
 function emptyBoard(): InventoryBoard {
-  return { inProgress: [], review: [] };
+  return { inProgress: [], review: [], readyToRelease: [] };
 }
 
 function emptyInventory(): Inventory {
@@ -267,7 +279,11 @@ function normalizeBoard(value: Inventory["board"] | undefined): InventoryBoard {
   if (!value || !Array.isArray(value.inProgress) || !Array.isArray(value.review)) {
     return emptyBoard();
   }
-  return { inProgress: value.inProgress, review: value.review };
+  return {
+    inProgress: value.inProgress,
+    review: value.review,
+    readyToRelease: Array.isArray(value.readyToRelease) ? value.readyToRelease : [],
+  };
 }
 
 function statusDir(): string {
@@ -447,6 +463,7 @@ function parseDispatchState(body: string): DispatchState | undefined {
         raw.phase === "working" ||
         raw.phase === "reviewing" ||
         raw.phase === "review" ||
+        raw.phase === "releasing" ||
         raw.phase === "error"
       ) {
         return raw;
@@ -576,6 +593,23 @@ function claimReviewing(
     formatDispatchComment(
       { phase: "reviewing", ...state, at: new Date().toISOString() },
       ["", "**Ревьюер смотрит.** PR сдан, карточка In Progress. Не дублирую запуск."],
+    ),
+    token,
+  );
+}
+
+function claimReleasing(
+  repo: string,
+  issueNumber: number,
+  token: string,
+  state: Pick<DispatchState, "prUrls"> = {},
+): void {
+  commentOnIssue(
+    repo,
+    issueNumber,
+    formatDispatchComment(
+      { phase: "releasing", ...state, at: new Date().toISOString() },
+      ["", "**Релиз.** Ready to Release: ченджлог → merge → Done. Не дублирую запуск."],
     ),
     token,
   );
@@ -831,7 +865,87 @@ function issueNodeId(url: string, token: string): string {
   return gh(["api", `repos/${match[1]}/issues/${match[2]}`, "--jq", ".node_id"], token);
 }
 
-function addToProject(url: string, status: keyof typeof STATUS_OPTION_ID, token: string): void {
+type StatusOption = { id: string; name: string; color: string };
+
+function listStatusOptions(token: string): StatusOption[] {
+  const data = graphql<{
+    node: {
+      field: { options: StatusOption[] } | null;
+    };
+  }>(
+    token,
+    'query($projectId:ID!){node(id:$projectId){...on ProjectV2{field(name:"Status"){...on ProjectV2SingleSelectField{options{id name color}}}}}}',
+    { projectId: PROJECT_ID },
+  );
+  return data.node.field?.options ?? [];
+}
+
+function ensureStatusOptions(token: string): Partial<Record<StatusName, string>> {
+  if (statusOptionCache) return statusOptionCache;
+  let options = listStatusOptions(token);
+  const byName = new Map(options.map((option) => [option.name, option]));
+  const missing = STATUS_NAMES.filter((name) => !byName.has(name));
+  if (missing.length) {
+    const next = [
+      ...options.map((option) => ({
+        id: option.id,
+        name: option.name,
+        color: option.color || "GRAY",
+        description: "",
+      })),
+      ...missing.map((name) => ({
+        name,
+        color: STATUS_OPTION_COLOR[name],
+        description: "",
+      })),
+    ];
+    const mutation = `mutation($input:UpdateProjectV2FieldInput!){updateProjectV2Field(input:$input){projectV2Field{...on ProjectV2SingleSelectField{options{id name color}}}}}`;
+    const dir = mkdtempSync(join(tmpdir(), "orch-"));
+    const file = join(dir, "graphql.json");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        query: mutation,
+        variables: {
+          input: {
+            fieldId: STATUS_FIELD_ID,
+            singleSelectOptions: next,
+          },
+        },
+      }),
+    );
+    const raw = gh(["api", "graphql", "--input", file], token);
+    const payload = JSON.parse(raw) as {
+      data?: {
+        updateProjectV2Field?: {
+          projectV2Field?: { options?: StatusOption[] };
+        };
+      };
+      errors?: Array<{ message: string }>;
+    };
+    if (payload.errors?.length) {
+      throw new Error(payload.errors.map((e) => e.message).join("; "));
+    }
+    options = payload.data?.updateProjectV2Field?.projectV2Field?.options ?? listStatusOptions(token);
+    console.log(`project Status: созданы колонки ${missing.join(", ")}`);
+  }
+  const map: Partial<Record<StatusName, string>> = { ...STATUS_OPTION_FALLBACK };
+  for (const option of options) {
+    if ((STATUS_NAMES as readonly string[]).includes(option.name)) {
+      map[option.name as StatusName] = option.id;
+    }
+  }
+  statusOptionCache = map;
+  return map;
+}
+
+function statusOptionId(status: StatusName, token: string): string {
+  const id = ensureStatusOptions(token)[status] ?? STATUS_OPTION_FALLBACK[status];
+  if (!id) throw new Error(`нет option id для колонки ${status}`);
+  return id;
+}
+
+function addToProject(url: string, status: StatusName, token: string): void {
   try {
     const contentId = issueNodeId(url, token);
     const added = graphql<{ addProjectV2ItemById: { item: { id: string } } }>(
@@ -846,7 +960,7 @@ function addToProject(url: string, status: keyof typeof STATUS_OPTION_ID, token:
         projectId: PROJECT_ID,
         itemId: added.addProjectV2ItemById.item.id,
         fieldId: STATUS_FIELD_ID,
-        optionId: STATUS_OPTION_ID[status],
+        optionId: statusOptionId(status, token),
       },
     );
   } catch (err) {
@@ -1198,7 +1312,7 @@ async function maybePromoteGoal(childBody: string, token: string): Promise<void>
     formatDispatchComment(
       { phase: "review", at: new Date().toISOString() },
       [
-        "**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Merge сам.",
+        "**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Ок — перенеси в Ready to Release.",
       ],
     ),
   );
@@ -1246,7 +1360,7 @@ async function settleWithReviewer(
         [
           ctx.source,
           "",
-          "**Нужна приёмка.** PR нет — реши сам. Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам.",
+          "**Нужна приёмка.** PR нет — реши сам. Замечания — комментарий в этот issue, карточку верни в In Progress. Ок — Ready to Release.",
           prLines,
         ],
       ),
@@ -1328,8 +1442,8 @@ async function settleWithReviewer(
   addToProject(issueUrl, "Review", token);
   const headline =
     review.verdict === "pass"
-      ? "**Нужна приёмка.** Ревьюер пропустил. Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам."
-      : "**Нужна приёмка.** Ревьюер заблокировал (нужен человек). Замечания — комментарий в этот issue, карточку верни в In Progress. Merge сам.";
+      ? "**Нужна приёмка.** Ревьюер пропустил. Замечания — комментарий в этот issue, карточку верни в In Progress. Ок — перенеси в Ready to Release."
+      : "**Нужна приёмка.** Ревьюер заблокировал (нужен человек). Замечания — комментарий в этот issue, карточку верни в In Progress. Ок — Ready to Release.";
   commentOnIssue(
     repo,
     number,
@@ -1387,7 +1501,7 @@ async function finishNewIconWithoutMachine(
       [
         "Slash `/new-icon` уже открыл PR с вариантами. Это не слот My Machines (`win-predict-vps`).",
         "",
-        "**Нужна приёмка.** Выбери вариант A–D комментарием в PR — дальше choose-or-revise. Канонические имена и README — после выбора. Merge сам.",
+        "**Нужна приёмка.** Выбери вариант A–D комментарием в PR — дальше choose-or-revise. Канонические имена и README — после выбора. Ок — Ready to Release.",
         prLines,
       ],
     ),
@@ -1711,7 +1825,7 @@ async function commentDispatch(
             prUrls: notes.flatMap((n) => extractPrUrls(n)),
             at: new Date().toISOString(),
           },
-          ["**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Merge сам."],
+          ["**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Ок — перенеси в Ready to Release."],
         )
       : formatDispatchComment(
           { phase: "working", at: new Date().toISOString() },
@@ -1950,6 +2064,367 @@ function cardFromIssue(item: BoardIssue): InventoryCard {
   };
 }
 
+function repoHasSemanticRelease(repo: string, token: string, ref: string): boolean {
+  try {
+    const raw = gh(
+      ["api", `repos/${repo}/contents/package.json?ref=${encodeURIComponent(ref)}`, "--jq", ".content"],
+      token,
+    );
+    const pkg = JSON.parse(Buffer.from(raw.replace(/\s/g, ""), "base64").toString("utf8")) as {
+      scripts?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      dependencies?: Record<string, string>;
+    };
+    const scripts = Object.values(pkg.scripts ?? {}).join(" ");
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    return /semantic-release/.test(scripts) || Boolean(deps["semantic-release"]);
+  } catch {
+    return false;
+  }
+}
+
+function readRepoFile(
+  repo: string,
+  path: string,
+  ref: string,
+  token: string,
+): { text: string; sha: string } | null {
+  try {
+    const raw = gh(
+      [
+        "api",
+        `repos/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`,
+        "--jq",
+        "{content:.content,sha:.sha}",
+      ],
+      token,
+    );
+    const parsed = JSON.parse(raw) as { content: string; sha: string };
+    if (!parsed.content || !parsed.sha) return null;
+    return {
+      text: Buffer.from(parsed.content.replace(/\s/g, ""), "base64").toString("utf8"),
+      sha: parsed.sha,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeRepoFile(
+  repo: string,
+  path: string,
+  branch: string,
+  content: string,
+  sha: string,
+  message: string,
+  token: string,
+): void {
+  const dir = mkdtempSync(join(tmpdir(), "orch-"));
+  const file = join(dir, "payload.json");
+  writeFileSync(
+    file,
+    JSON.stringify({
+      message,
+      content: Buffer.from(content, "utf8").toString("base64"),
+      branch,
+      sha,
+    }),
+  );
+  gh(["api", "--method", "PUT", `repos/${repo}/contents/${path}`, "--input", file], token);
+}
+
+function buildChangelogEntry(prTitle: string, prUrl: string, issueUrl: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const title = prTitle.replace(/^\s+|\s+$/g, "") || "Release";
+  return [
+    `## Unreleased (${today})`,
+    "",
+    `* ${title} ([PR](${prUrl}), [issue](${issueUrl}))`,
+    "",
+    "",
+  ].join("\n");
+}
+
+function insertChangelogEntry(existing: string, entry: string): string {
+  const trimmed = existing.replace(/^\uFEFF/, "");
+  const bullet = entry.split("\n").find((line) => line.startsWith("* "));
+  if (bullet && /^## Unreleased\b/m.test(trimmed)) {
+    return trimmed.replace(/^(## Unreleased[^\n]*\n)/m, `$1\n${bullet}\n`);
+  }
+  const heading = trimmed.match(/^# [^\n]+\n+/);
+  if (heading) {
+    return `${heading[0]}${entry}${trimmed.slice(heading[0].length)}`;
+  }
+  return `${entry}${trimmed}`;
+}
+
+function updateChangelogForPr(
+  prUrl: string,
+  issueUrl: string,
+  token: string,
+): { updated: boolean; note: string } {
+  const { repo, number } = parsePrUrl(prUrl);
+  const raw = gh(
+    ["pr", "view", String(number), "-R", repo, "--json", "title,headRefName,url"],
+    token,
+  );
+  const pr = JSON.parse(raw) as { title: string; headRefName: string; url: string };
+  const branch = pr.headRefName;
+  if (!branch) return { updated: false, note: "нет head ветки PR" };
+  if (repoHasSemanticRelease(repo, token, branch)) {
+    return { updated: false, note: "CHANGELOG обновит semantic-release после merge" };
+  }
+  const file = readRepoFile(repo, "CHANGELOG.md", branch, token);
+  if (!file) return { updated: false, note: "CHANGELOG.md нет — пропуск" };
+  if (file.text.includes(pr.url) || file.text.includes(prUrl)) {
+    return { updated: false, note: "запись уже есть" };
+  }
+  const next = insertChangelogEntry(file.text, buildChangelogEntry(pr.title, pr.url, issueUrl));
+  if (next === file.text) return { updated: false, note: "ченджлог без изменений" };
+  writeRepoFile(
+    repo,
+    "CHANGELOG.md",
+    branch,
+    next,
+    file.sha,
+    `docs: changelog for ${pr.title.slice(0, 60)}`,
+    token,
+  );
+  return { updated: true, note: "CHANGELOG.md обновлён" };
+}
+
+function mergePullRequest(prUrl: string, token: string): string {
+  const { repo, number } = parsePrUrl(prUrl);
+  const state = gh(
+    ["pr", "view", String(number), "-R", repo, "--json", "state,mergeable,title,url"],
+    token,
+  );
+  const pr = JSON.parse(state) as {
+    state: string;
+    mergeable: string;
+    title: string;
+    url: string;
+  };
+  if (pr.state === "MERGED") return `${pr.url} уже смержен`;
+  if (pr.state !== "OPEN") throw new Error(`PR ${pr.url} в состоянии ${pr.state}`);
+  gh(
+    [
+      "pr",
+      "merge",
+      String(number),
+      "-R",
+      repo,
+      "--squash",
+      "--delete-branch",
+      "--subject",
+      pr.title,
+    ],
+    token,
+  );
+  return `${pr.url} смержен (squash)`;
+}
+
+function findPrsForRelease(issueUrl: string, state: DispatchState | undefined, token: string): string[] {
+  const open = findOpenPrsForIssue(issueUrl, token);
+  if (open.length) return open;
+  const remembered = (state?.prUrls ?? []).filter((url) => /\/pull\/\d+/.test(url));
+  return [...new Set(remembered)];
+}
+
+async function maybePromoteGoalToDone(childBody: string, token: string): Promise<void> {
+  const goalNumber = Number(childBody.match(/win-predict-ai-orchestrator#(\d+)/)?.[1] ?? "");
+  if (!goalNumber) return;
+  const comments = listIssueComments(GOAL_REPO, goalNumber, token);
+  const plan = extractStoredPlan(comments, goalNumber);
+  if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return;
+  for (const task of plan.tasks) {
+    const child = findExistingChild(task, plan.goal_number, token);
+    if (!child) return;
+    if (!child.closed) return;
+  }
+  const goalUrl = `https://github.com/${GOAL_REPO}/issues/${goalNumber}`;
+  addToProject(goalUrl, "Done", token);
+  commentOnGoal(
+    goalNumber,
+    formatDispatchComment(
+      { phase: "review", at: new Date().toISOString() },
+      ["**Готово.** Все child закрыты — Goal в Done."],
+    ),
+  );
+  await notifyTelegram(`Goal #${goalNumber}: Done\n${goalUrl}`);
+}
+
+async function handleChildRelease(item: BoardIssue, token: string): Promise<boolean> {
+  const comments = listIssueComments(item.repo, item.number, token);
+  const state = lastDispatchState(comments);
+  if (state?.phase === "releasing" && isActivePhase(state, "releasing")) {
+    console.log(`skip release ${item.url}: already releasing`);
+    return false;
+  }
+  const prUrls = findPrsForRelease(item.url, state, token);
+  await notifyTelegram(`Доска: Ready to Release ${item.repo} #${item.number}\n${item.url}`);
+  claimReleasing(item.repo, item.number, token, { prUrls });
+  await sleep(CLAIM_WAIT_MS);
+
+  const notes: string[] = [];
+  if (!prUrls.length) {
+    if (item.closed) {
+      addToProject(item.url, "Done", token);
+      notes.push("issue уже закрыт, PR нет — Done");
+    } else {
+      notes.push("открытого PR нет — верни в Review или приложи PR");
+      commentOnIssue(
+        item.repo,
+        item.number,
+        formatDispatchComment(
+          { phase: "review", at: new Date().toISOString() },
+          ["**Релиз не вышел.** Нет открытого PR. Карточка остаётся в Ready to Release — закрой вручную или верни в Review."],
+        ),
+        token,
+      );
+      await notifyTelegram(`Релиз: нет PR\n${item.url}`);
+      return false;
+    }
+  } else {
+    for (const prUrl of prUrls) {
+      try {
+        const changelog = updateChangelogForPr(prUrl, item.url, token);
+        notes.push(`${prUrl}: ${changelog.note}`);
+        const merged = mergePullRequest(prUrl, token);
+        notes.push(merged);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        notes.push(`${prUrl}: ошибка — ${message.slice(0, 300)}`);
+        commentOnIssue(
+          item.repo,
+          item.number,
+          formatDispatchComment(
+            { phase: "error", prUrls, at: new Date().toISOString() },
+            [
+              "**Релиз упал.** Карточка в Ready to Release — поправь и подожди следующий тик, или верни в Review.",
+              ...notes.map((n) => `- ${n}`),
+            ],
+          ),
+          token,
+        );
+        await notifyTelegram(`Релиз ошибка\n${item.url}\n${message.slice(0, 400)}`);
+        return false;
+      }
+    }
+    addToProject(item.url, "Done", token);
+  }
+
+  commentOnIssue(
+    item.repo,
+    item.number,
+    formatDispatchComment(
+      { phase: "review", prUrls, at: new Date().toISOString() },
+      ["**Релиз.** Ченджлог и merge сделаны — колонка Done.", ...notes.map((n) => `- ${n}`)],
+    ),
+    token,
+  );
+  await notifyTelegram(`Релиз Done\n${item.url}\n${notes.join("\n")}`);
+  await maybePromoteGoalToDone(item.body, token);
+  return true;
+}
+
+async function handleGoalRelease(item: BoardIssue, token: string): Promise<void> {
+  const comments = listIssueComments(item.repo, item.number, token);
+  const state = lastDispatchState(comments);
+  if (state?.phase === "releasing" && isActivePhase(state, "releasing")) {
+    console.log(`skip goal release #${item.number}: already releasing`);
+    return;
+  }
+  const plan = extractStoredPlan(comments, item.number);
+  await notifyTelegram(`Доска: Ready to Release Goal #${item.number}\n${item.url}`);
+  claimReleasing(item.repo, item.number, token);
+  await sleep(CLAIM_WAIT_MS);
+
+  if (!plan || plan.status !== "ready" || plan.tasks.length === 0) {
+    addToProject(item.url, "Done", token);
+    commentOnGoal(
+      item.number,
+      formatDispatchComment(
+        { phase: "review", at: new Date().toISOString() },
+        ["**Готово.** Плана/child нет — Goal в Done."],
+      ),
+    );
+    return;
+  }
+
+  const board = listProjectIssues(token);
+  const notes: string[] = [];
+  let released = 0;
+  let failed = 0;
+  for (const task of plan.tasks) {
+    const child = findExistingChild(task, plan.goal_number, token);
+    if (!child) {
+      notes.push(`${task.id}: child не найден`);
+      failed += 1;
+      continue;
+    }
+    if (child.closed) {
+      notes.push(`${task.id}: уже закрыт`);
+      addToProject(child.url, "Done", token);
+      released += 1;
+      continue;
+    }
+    const card = board.find((entry) => entry.url === child.url);
+    const parsed = parseIssueUrl(child.url);
+    const fetched = fetchIssue(parsed.repo, parsed.number, token);
+    const childIssue: BoardIssue = {
+      repo: parsed.repo,
+      number: fetched.number,
+      title: fetched.title,
+      body: fetched.body || "",
+      url: child.url,
+      labels: fetched.labels.map((label) => label.name),
+      status: card?.status ?? "Ready to Release",
+      closed: false,
+    };
+    const ok = await handleChildRelease(childIssue, token);
+    notes.push(`${task.id}: ${ok ? "релиз" : "не вышло"}`);
+    if (ok) released += 1;
+    else failed += 1;
+  }
+
+  if (failed === 0) {
+    addToProject(item.url, "Done", token);
+    commentOnGoal(
+      item.number,
+      formatDispatchComment(
+        { phase: "review", at: new Date().toISOString() },
+        ["**Готово.** Child-релизы завершены — Goal в Done.", ...notes.map((n) => `- ${n}`)],
+      ),
+    );
+    await notifyTelegram(`Goal #${item.number}: Done (${released})\n${item.url}`);
+  } else {
+    commentOnGoal(
+      item.number,
+      formatDispatchComment(
+        { phase: "error", at: new Date().toISOString() },
+        [
+          "**Релиз Goal неполный.** Часть child ещё открыта — поправь и снова Ready to Release.",
+          ...notes.map((n) => `- ${n}`),
+        ],
+      ),
+    );
+    await notifyTelegram(`Goal #${item.number}: релиз неполный\n${item.url}\n${notes.join("\n")}`);
+  }
+}
+
+async function handleReadyToRelease(item: BoardIssue, token: string): Promise<void> {
+  if (item.repo === GOAL_REPO && item.labels.includes("goal")) {
+    await handleGoalRelease(item, token);
+    return;
+  }
+  if (!isRepo(item.repo)) {
+    console.log(`skip release ${item.url}: не рабочий репо`);
+    return;
+  }
+  await handleChildRelease(item, token);
+}
+
 async function watchBoard(): Promise<void> {
   if (!process.env.TELEGRAM_BOT_TOKEN?.trim() || !process.env.TELEGRAM_CHAT_ID?.trim()) {
     console.warn("telegram: нет TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID — в чат не пишу");
@@ -1959,12 +2434,27 @@ async function watchBoard(): Promise<void> {
     console.log(`inventory ${INVENTORY_PATH}: ${inventory.active.length}/${inventory.slots}`);
     const token = writeToken();
     if (!token) throw new Error("нет секрета ORCHESTRATOR_GITHUB_TOKEN");
+    ensureStatusOptions(token);
     const all = listProjectIssues(token);
     inventory.board = {
       inProgress: all.filter((item) => item.status === "In Progress" && !item.closed).map(cardFromIssue),
       review: all.filter((item) => item.status === "Review" && !item.closed).map(cardFromIssue),
+      readyToRelease: all
+        .filter((item) => item.status === "Ready to Release" && !item.closed)
+        .map(cardFromIssue),
     };
     writeInventory(inventory);
+
+    const ready = all.filter((item) => item.status === "Ready to Release" && !item.closed);
+    const readyGoals = ready.filter((item) => item.repo === GOAL_REPO && item.labels.includes("goal"));
+    const readyChildren = ready.filter((item) => isRepo(item.repo));
+    console.log(
+      `watch: release ${readyGoals.length} goal, ${readyChildren.length} child in Ready to Release`,
+    );
+    for (const item of [...readyChildren, ...readyGoals]) {
+      await handleReadyToRelease(item, token);
+    }
+
     const items = all.filter((item) => item.status === "In Progress" && !item.closed);
     const goals = items.filter((item) => item.repo === GOAL_REPO && item.labels.includes("goal"));
     const children = items.filter((item) => isRepo(item.repo));

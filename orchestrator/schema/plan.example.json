@@ -5,7 +5,7 @@
   "surfaces": ["icons", "admin"],
   "human_gates": [
     "выбор варианта иконки в PR win-predict-ai-icons",
-    "merge PR пакета и PR админки"
+    "приёмка → Ready to Release (merge делает вотчер)"
   ],
   "tasks": [
     {

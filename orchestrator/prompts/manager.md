@@ -60,7 +60,7 @@ Goal Issue: заголовок, тело (Результат, Поверхнос
 Всегда указывай в `human_gates`, если применимо:
 
 - выбор варианта иконки (комментарий на child issue, карточка снова In Progress)
-- merge PR (воркеры не мержат)
+- приёмка → Ready to Release (merge делает вотчер)
 - приёмка спорного UX
 
 `ui`, `app`, `admin`, `data` — trigger `sdk`: диспетчер запускает `worker.md` на My Machines (VPS `win-predict-vps`), затем local-ревьюера (`reviewer.md`) по PR. Не выдумывай slash-команды. `issue_only` — только если цель явно «issue человеку, без агента». Slash `/new-icon` на VPS не переносить. Правки после Review человек пишет **в issue** (Goal или child) и возвращает карточку в In Progress — это не часть плана. Не создавай отдельную задачу «ревью» — ревьюер ходит сам.

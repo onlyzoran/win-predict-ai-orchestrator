@@ -8,6 +8,7 @@ body:
       value: |
         Цель живёт только здесь. Карточка Inbox → In Progress (или комментарий `/orchestrate`) — оркестратор создаст child issues
         в `ui` / `icons` / `data` / `app` / `admin`. Правки после Review: комментарий в этот issue и карточка снова In Progress.
+        Приёмка: Review → Ready to Release (вотчер смержит и уведёт в Done).
   - type: textarea
     id: outcome
     attributes:
@@ -31,7 +32,7 @@ body:
     id: constraints
     attributes:
       label: Ограничения
-      description: Что нельзя трогать, какой стиль, дедлайн, зависимость от человека (выбор иконки, merge).
+      description: Что нельзя трогать, какой стиль, дедлайн, зависимость от человека (выбор иконки, приёмка).
       placeholder: Не менять семантические токены. Иконку выбираю сам в PR.
   - type: textarea
     id: done
