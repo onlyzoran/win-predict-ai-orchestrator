@@ -50,10 +50,10 @@ Goal Issue: заголовок, тело (Результат, Поверхнос
 
 - `cursor-cloud-agents`
 - `ai-win-predict`, `ai-win-predict-icons` (вне MVP)
-- bump версий пакетов в app/admin — это делает существующий агент после publish
+- ручной bump версий пакетов в app/admin — после PR библиотеки оркестратор публикует prerelease и сам подтягивает её в feature-PR app/admin того же Goal; после Ready to Release библиотеки заменяет prerelease на стабильную. Стабильный bump-агент добивает consumers после publish с `main`
 - sync Vue-иконок в React — вне MVP
 
-Если пакет меняется, в `body` consumer-задачи напиши: bump делает существующий агент, этот issue — только интеграция.
+Если пакет меняется, в `body` consumer-задачи напиши: prerelease/bump делает оркестратор, этот issue — только интеграция API/экранов.
 
 ## Human gates
 

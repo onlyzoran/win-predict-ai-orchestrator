@@ -10,6 +10,16 @@ import {
   taskMarker,
   type ChildIssueRef,
 } from "./child-issue.js";
+import {
+  branchNameForPrerelease,
+  bumpPackageOnBranch,
+  isLibraryPackageRepo,
+  openOrFindBumpPr,
+  packageNameForLibraryRepo,
+  publishLibraryPrerelease,
+  waitForStablePackageVersion,
+  type ConsumerBump,
+} from "./prerelease.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GOAL_REPO = "onlyzoran/win-predict-ai-orchestrator";
@@ -1625,6 +1635,217 @@ async function runMachineWorker(
   }
 }
 
+function fetchChildBody(issueUrl: string, token: string): string {
+  const { repo, number } = parseIssueUrl(issueUrl);
+  const issue = fetchIssue(repo, number, token);
+  return issue.body || "";
+}
+
+async function bumpPrereleaseIntoGoalConsumers(
+  childBody: string,
+  packageName: string,
+  version: string,
+  token: string,
+): Promise<ConsumerBump[]> {
+  const goalNumber = parentGoalNumber(childBody);
+  if (!goalNumber) return [];
+  const comments = listIssueComments(GOAL_REPO, goalNumber, token);
+  const plan = extractStoredPlan(comments, goalNumber);
+  if (!plan || plan.status !== "ready") return [];
+
+  const results: ConsumerBump[] = [];
+  const consumers = plan.tasks.filter((t) => t.surface === "app" || t.surface === "admin");
+  for (const task of consumers) {
+    const child = findExistingChild(task, goalNumber, token);
+    if (!child || child.closed) continue;
+    const open = findOpenPrs(child.url, token);
+    const commitMessage = `chore: bump ${packageName} to ${version}`;
+    try {
+      if (open.length) {
+        const branch = open[0].headRefName;
+        const bumped = bumpPackageOnBranch({
+          repo: task.repo,
+          branch,
+          packageName,
+          version,
+          token,
+          commitMessage,
+        });
+        results.push({
+          repo: task.repo,
+          issueUrl: child.url,
+          prUrl: open[0].url,
+          note: bumped.changed
+            ? `обновил ${packageName}@${version} в ${open[0].url}`
+            : `уже ${packageName}@${version} в ${open[0].url}`,
+        });
+        continue;
+      }
+
+      const branch = branchNameForPrerelease(packageName, version);
+      const bumped = bumpPackageOnBranch({
+        repo: task.repo,
+        branch,
+        packageName,
+        version,
+        token,
+        createBranchFromMain: true,
+        commitMessage,
+      });
+      const title = `chore: bump ${packageName} to ${version}`;
+      const body = [
+        `Refs ${child.url}`,
+        "",
+        `Тестовая версия \`${packageName}@${version}\` из библиотеки Goal #${goalNumber}.`,
+        "Оркестратор подтянул prerelease для интеграции до merge библиотеки.",
+        "",
+        parentLine(GOAL_REPO, goalNumber),
+      ].join("\n");
+      if (!bumped.changed) {
+        const existing = openOrFindBumpPr({
+          repo: task.repo,
+          branch,
+          title,
+          body,
+          token,
+          gh,
+        });
+        results.push({
+          repo: task.repo,
+          issueUrl: child.url,
+          prUrl: existing,
+          note: `уже ${packageName}@${version} — ${existing || branch}`,
+        });
+        continue;
+      }
+      const prUrl = openOrFindBumpPr({
+        repo: task.repo,
+        branch,
+        title,
+        body,
+        token,
+        gh,
+      });
+      results.push({
+        repo: task.repo,
+        issueUrl: child.url,
+        prUrl,
+        note: `создал bump PR ${prUrl}`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      results.push({
+        repo: task.repo,
+        issueUrl: child.url,
+        prUrl: "",
+        note: `ошибка bump ${task.repo}: ${message.slice(0, 240)}`,
+      });
+    }
+  }
+  return results;
+}
+
+async function afterLibraryPr(
+  task: Task,
+  issueUrl: string,
+  prUrls: string[],
+  token: string,
+): Promise<string> {
+  if (!isLibraryPackageRepo(task.repo) || !prUrls.length) return "";
+  const childBody = fetchChildBody(issueUrl, token);
+  try {
+    const published = publishLibraryPrerelease(prUrls[0], token, gh);
+    const bumps = await bumpPrereleaseIntoGoalConsumers(
+      childBody,
+      published.packageName,
+      published.version,
+      token,
+    );
+    const bumpLines = bumps.length
+      ? bumps.map((b) => `- ${b.note}`)
+      : ["- consumer app/admin в плане Goal нет или child закрыты"];
+    const { repo, number } = parseIssueUrl(issueUrl);
+    commentOnIssue(
+      repo,
+      number,
+      [
+        "**Prerelease.**",
+        `- пакет: \`${published.packageName}@${published.version}\``,
+        `- dist-tag: \`${published.tag}\``,
+        `- PR: ${published.prUrl}`,
+        published.skippedPublish ? "- publish: уже был в registry" : "- publish: ok",
+        "",
+        "Подтянул в app/admin:",
+        ...bumpLines,
+      ].join("\n"),
+      token,
+    );
+    await notifyTelegram(
+      `Prerelease ${published.packageName}@${published.version}\n${issueUrl}\n${bumps.map((b) => b.note).join("\n")}`,
+    );
+    return `${published.packageName}@${published.version}`;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`prerelease ${task.id}: ${message}`);
+    const { repo, number } = parseIssueUrl(issueUrl);
+    commentOnIssue(
+      repo,
+      number,
+      `**Prerelease не вышел.** ${message.slice(0, 500)}\nПовтор — после следующего пуша в PR библиотеки.`,
+      token,
+    );
+    await notifyTelegram(`Prerelease ошибка\n${issueUrl}\n${message.slice(0, 400)}`);
+    return "";
+  }
+}
+
+async function promoteStableIntoGoalConsumers(
+  childBody: string,
+  libraryRepo: string,
+  stableVersion: string,
+  token: string,
+): Promise<string[]> {
+  const packageName = packageNameForLibraryRepo(libraryRepo);
+  if (!packageName) return [];
+  const goalNumber = parentGoalNumber(childBody);
+  if (!goalNumber) return [];
+  const comments = listIssueComments(GOAL_REPO, goalNumber, token);
+  const plan = extractStoredPlan(comments, goalNumber);
+  if (!plan || plan.status !== "ready") return [];
+
+  const notes: string[] = [];
+  const consumers = plan.tasks.filter((t) => t.surface === "app" || t.surface === "admin");
+  for (const task of consumers) {
+    const child = findExistingChild(task, goalNumber, token);
+    if (!child || child.closed) continue;
+    const open = findOpenPrs(child.url, token);
+    if (!open.length) {
+      notes.push(`${task.repo}: открытого PR нет — skip`);
+      continue;
+    }
+    try {
+      const bumped = bumpPackageOnBranch({
+        repo: task.repo,
+        branch: open[0].headRefName,
+        packageName,
+        version: stableVersion,
+        token,
+        exact: false,
+        commitMessage: `chore: bump ${packageName} to ${stableVersion}`,
+      });
+      notes.push(
+        bumped.changed
+          ? `${open[0].url}: ${packageName}@${stableVersion}`
+          : `${open[0].url}: уже ${stableVersion}`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      notes.push(`${task.repo}: ошибка promote — ${message.slice(0, 200)}`);
+    }
+  }
+  return notes;
+}
+
 async function dispatchTask(
   task: Task,
   issueUrl: string,
@@ -1645,6 +1866,7 @@ async function dispatchTask(
   if (isNewIconTask(task)) {
     const existing = findOpenPrsForIssue(issueUrl, token);
     if (existing.length) {
+      await afterLibraryPr(task, issueUrl, existing, token);
       return finishNewIconWithoutMachine(issueUrl, token, existing);
     }
     addToProject(issueUrl, "In Progress", token);
@@ -1652,6 +1874,7 @@ async function dispatchTask(
     await notifyTelegram(`Slash ${task.trigger.command}: ждём PR\n${issueUrl}`);
     const prUrls = await waitForOpenPr(issueUrl, token, SLASH_WAIT_MS);
     await notifyTelegram(`Slash ${task.trigger.command}: PR\n${prUrls.join("\n")}`);
+    await afterLibraryPr(task, issueUrl, prUrls, token);
     return settleWithReviewer(task, issueUrl, token, {
       prUrls,
       source: `Slash \`${task.trigger.command}\` открыл PR.`,
@@ -1663,6 +1886,7 @@ async function dispatchTask(
     token,
     opts.notes ?? "",
   );
+  await afterLibraryPr(task, issueUrl, prUrls, token);
   return settleWithReviewer(task, issueUrl, token, {
     prUrls,
     agentId,
@@ -2287,12 +2511,23 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
       return false;
     }
   } else {
+    let mergeSha: string | undefined;
     for (const prUrl of prUrls) {
       try {
         const changelog = updateChangelogForPr(prUrl, item.url, token);
         notes.push(`${prUrl}: ${changelog.note}`);
         const merged = mergePullRequest(prUrl, token);
         notes.push(merged);
+        try {
+          const { repo: prRepo, number: prNumber } = parsePrUrl(prUrl);
+          const sha = gh(
+            ["pr", "view", String(prNumber), "-R", prRepo, "--json", "mergeCommit", "--jq", ".mergeCommit.oid // empty"],
+            token,
+          );
+          if (sha) mergeSha = sha;
+        } catch {
+          /* optional */
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         notes.push(`${prUrl}: ошибка — ${message.slice(0, 300)}`);
@@ -2309,6 +2544,39 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
           token,
         );
         await notifyTelegram(`Релиз ошибка\n${item.url}\n${message.slice(0, 400)}`);
+        return false;
+      }
+    }
+    if (isLibraryPackageRepo(item.repo)) {
+      try {
+        const packageName = packageNameForLibraryRepo(item.repo);
+        if (packageName) {
+          const stable = waitForStablePackageVersion(item.repo, packageName, token, gh, mergeSha);
+          notes.push(`стабильная ${packageName}@${stable}`);
+          const promoteNotes = await promoteStableIntoGoalConsumers(
+            item.body,
+            item.repo,
+            stable,
+            token,
+          );
+          notes.push(...promoteNotes);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        notes.push(`promote stable: ${message.slice(0, 300)}`);
+        commentOnIssue(
+          item.repo,
+          item.number,
+          formatDispatchComment(
+            { phase: "error", prUrls, at: new Date().toISOString() },
+            [
+              "**Релиз смержен, но promote stable в app/admin упал.** Поправь и снова Ready to Release, или добей bump вручную.",
+              ...notes.map((n) => `- ${n}`),
+            ],
+          ),
+          token,
+        );
+        await notifyTelegram(`Релиз promote ошибка\n${item.url}\n${message.slice(0, 400)}`);
         return false;
       }
     }

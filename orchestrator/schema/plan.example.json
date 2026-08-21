@@ -24,7 +24,7 @@
       "surface": "admin",
       "repo": "onlyzoran/win-predict-ai-admin",
       "title": "Подключить иконку турнира после публикации пакета",
-      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#1\n\nПосле публикации @onlyzoran/win-predict-ai-icons использовать новую иконку в UI турниров.\nBump пакета делает существующий агент — этот issue только про интеграцию в admin.\n\nКритерий куска: иконка видна в админке, PR готов к merge.\n",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#1\n\nПосле prerelease @onlyzoran/win-predict-ai-icons использовать новую иконку в UI турниров.\nPrerelease/bump делает оркестратор — этот issue только про интеграцию в admin.\n\nКритерий куска: иконка видна в админке, PR готов к merge.\n",
       "depends_on": ["icons-tournament"],
       "parallel_group": 2,
       "trigger": { "type": "issue_only" },

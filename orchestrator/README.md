@@ -35,7 +35,7 @@ orchestrator/
 | Secret | Зачем |
 |---|---|
 | `CURSOR_API_KEY` | персональный user key; менеджер и ревьюер (local) и воркеры (My Machines). Тот же ключ / тот же Cursor-аккаунт, что у `agent worker start` на VPS |
-| `ORCHESTRATOR_GITHUB_TOKEN` | PAT: `repo` + `project`; в сессии воркера как `$GH_TOKEN` |
+| `ORCHESTRATOR_GITHUB_TOKEN` | PAT: `repo` + `project` + **`read:packages`** (prerelease bump в app/admin из GitHub Packages); в сессии воркера как `$GH_TOKEN` |
 | `TELEGRAM_BOT_TOKEN` | бот для коротких событий (не сырой лог, не каждый тик таймера) |
 | `TELEGRAM_CHAT_ID` | чат, куда писать |
 
@@ -59,4 +59,4 @@ orchestrator/
 | decompose | local `Agent.prompt` |
 | dispatch | issues + slash `/new-icon` или My Machines `worker.md` |
 | review | local `Agent.prompt` (`reviewer.md`) по PR; pass/blocked → Review, changes → воркер MODE B |
-| watch | systemd timer на VPS: In Progress (первый старт или после Review) → оркестратор/воркер; Ready to Release → ченджлог + merge → Done |
+| watch | systemd timer на VPS: In Progress → оркестратор/воркер; после PR ui/icons → prerelease + bump app/admin; Ready to Release → ченджлог + merge (+ promote stable для библиотек) → Done |
