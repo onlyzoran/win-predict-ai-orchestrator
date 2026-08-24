@@ -20,6 +20,7 @@ import {
   waitForStablePackageVersion,
   type ConsumerBump,
 } from "./prerelease.js";
+import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GOAL_REPO = "onlyzoran/win-predict-ai-orchestrator";
@@ -457,13 +458,28 @@ function parsePrUrl(url: string): { repo: string; number: number } {
   return { repo: match[1], number: Number(match[2]) };
 }
 
+function parseGhJsonArray<T>(raw: string): T[] {
+  const text = raw.trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (Array.isArray(parsed)) {
+      if (parsed.length && Array.isArray(parsed[0])) return (parsed as T[][]).flat();
+      return parsed as T[];
+    }
+    return [parsed as T];
+  } catch {
+    const pages = `[${text.replace(/\]\s*\[/g, "],[")}]`;
+    return (JSON.parse(pages) as T[][]).flat();
+  }
+}
+
 function listIssueComments(repo: string, issueNumber: number, token: string): IssueComment[] {
   const raw = gh(
-    ["api", `repos/${repo}/issues/${issueNumber}/comments?per_page=100`],
+    ["api", "--paginate", `repos/${repo}/issues/${issueNumber}/comments?per_page=100`],
     token,
   );
-  const parsed = JSON.parse(raw) as IssueComment | IssueComment[];
-  return Array.isArray(parsed) ? parsed : [parsed];
+  return parseGhJsonArray<IssueComment>(raw);
 }
 
 function parseDispatchState(body: string): DispatchState | undefined {
@@ -555,25 +571,21 @@ function shouldWakeChild(
   comments: IssueComment[],
   issueUrl: string,
 ): boolean {
-  if (state?.phase === "error") {
-    if (isResourceBackoff(state, comments)) return false;
-    return true;
+  let reviewChangesDebounce = false;
+  if (state?.phase === "review" && state.reviewVerdict === "changes" && state.at) {
+    const at = Date.parse(state.at);
+    reviewChangesDebounce = !Number.isNaN(at) && Date.now() - at < REVIEW_CHANGES_DEBOUNCE_MS;
   }
-  if (state?.phase === "reviewing") return !isActiveReviewing(state);
-  if (state?.phase === "review") {
-    if (state.reviewVerdict === "changes" && state.at) {
-      const at = Date.parse(state.at);
-      if (!Number.isNaN(at) && Date.now() - at < REVIEW_CHANGES_DEBOUNCE_MS) return false;
-    }
-    return true;
-  }
-  if (state?.phase === "working") {
-    if (notesAfterLastPhase(comments, "working")) return true;
-    if (slotFailedFor(issueUrl)) return true;
-    return !isActiveWorking(state);
-  }
-  // Нет фазы — ручной child в In Progress (первый старт).
-  return !state?.phase;
+  return shouldWakeOnPhase({
+    phase: state?.phase as WakePhase | undefined,
+    resourceBackoff: isResourceBackoff(state, comments),
+    reviewingActive: isActiveReviewing(state),
+    reviewChangesDebounce,
+    notesAfterWorking: Boolean(notesAfterLastPhase(comments, "working")),
+    slotFailed: slotFailedFor(issueUrl),
+    workingActive: isActiveWorking(state),
+    releasingActive: isActivePhase(state, "releasing"),
+  });
 }
 
 function formatDispatchComment(state: DispatchState, lines: string[]): string {
@@ -2223,6 +2235,7 @@ function childWakeReason(state: DispatchState | undefined, comments: IssueCommen
     return "повтор: комментарий пока working";
   }
   if (state?.phase === "working") return "повтор: working завис";
+  if (state?.phase === "releasing") return "после застрявшего релиза";
   return state?.phase ?? "старт";
 }
 
