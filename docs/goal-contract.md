@@ -14,13 +14,13 @@ Goal — одна высокоуровневая цель. Живёт тольк
 | Критерий готовности | Когда карточку можно двигать в Done |
 | Поверхности | Подсказка, какие репо затронуть |
 
-Лейбл `goal` ставит шаблон. Лейблы поверхностей (`ui`, `icons`, `data`, `app`, `admin`) оркестратор допишет после плана; вручную можно сразу.
+Лейбл `goal` ставит шаблон. Лейблы поверхностей (`ui`, `icons`, `data`, `app`, `admin`, `ios`) оркестратор допишет после плана; вручную можно сразу.
 
 Старт: карточка Goal **Inbox → In Progress** (или комментарий `/orchestrate`). Повтор с новыми child issues: `/orchestrate redo`.
 
 Правки после Review: комментарий **в issue** (Goal или child) и карточка **Review → In Progress**. Комментарий без смены колонки — только заметка, агент не стартует.
 
-Приёмка: когда результат ок — **Review → Ready to Release**. Вотчер **поднимет версию** в `package.json` (patch по умолчанию; `[minor]`/`[major]`/`[patch]` в заголовке PR; для ui/icons — minor при новых компонентах/иконках), запишет секцию в `CHANGELOG.md`, смержит PR и перенесёт карточку в **Done**. Для ui/icons после merge дождётся publish этой версии и заменит prerelease-пины в открытых PR app/admin того же Goal.
+Приёмка: когда результат ок — **Review → Ready to Release**. Вотчер **поднимет версию** в `package.json` (patch по умолчанию; `[minor]`/`[major]`/`[patch]` в заголовке PR; для ui/icons — minor при новых компонентах/иконках), запишет секцию в `CHANGELOG.md`, смержит PR и перенесёт карточку в **Done**. Если `package.json` нет (например `ios`) — только merge. Для ui/icons после merge дождётся publish этой версии и заменит prerelease-пины в открытых PR app/admin того же Goal.
 
 ## Prerelease библиотек
 
@@ -42,6 +42,7 @@ Goal — одна высокоуровневая цель. Живёт тольк
 | `data` | Goal и child | `win-predict-ai-data` |
 | `app` | Goal и child | `win-predict-ai` |
 | `admin` | Goal и child | `win-predict-ai-admin` |
+| `ios` | Goal и child | `win-predict-ai-ios` |
 
 ## Колонки Project
 
@@ -59,6 +60,6 @@ Goal — одна высокоуровневая цель. Живёт тольк
 
 ## Child issues
 
-Одно child issue — один `id` в плане. Несколько независимых кусков в одном репо — несколько issues, диспетчер не схлопывает их в одну карточку. Диспетчер после плана запускает воркера: My Machines `worker.md` (ui/app/admin/data) или slash `/new-icon`. Затем local-ревьюер читает PR и пишет вердикт в **issue**: pass/blocked → Review, changes → снова воркер. Правки человека — issue + колонка In Progress, не комментарий в PR. Закрытый child (смерженный кусок) считается готовым: его не переоткрывают и не блокируют им следующие задачи.
+Одно child issue — один `id` в плане. Несколько независимых кусков в одном репо — несколько issues, диспетчер не схлопывает их в одну карточку. Диспетчер после плана запускает воркера: My Machines `worker.md` (ui/app/admin/data/ios) или slash `/new-icon`. Затем local-ревьюер читает PR и пишет вердикт в **issue**: pass/blocked → Review, changes → снова воркер. Правки человека — issue + колонка In Progress, не комментарий в PR. Закрытый child (смерженный кусок) считается готовым: его не переоткрывают и не блокируют им следующие задачи.
 
 Как режется цель: [orchestrator/prompts/manager.md](../orchestrator/prompts/manager.md). Форма плана: [orchestrator/schema/plan.schema.json](../orchestrator/schema/plan.schema.json).

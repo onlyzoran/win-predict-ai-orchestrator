@@ -82,14 +82,16 @@ const REPOS = [
   "onlyzoran/win-predict-ai-data",
   "onlyzoran/win-predict-ai",
   "onlyzoran/win-predict-ai-admin",
+  "onlyzoran/win-predict-ai-ios",
 ] as const;
-const SURFACES = ["ui", "icons", "data", "app", "admin"] as const;
+const SURFACES = ["ui", "icons", "data", "app", "admin", "ios"] as const;
 const LABEL_META: Record<(typeof SURFACES)[number], { color: string; description: string }> = {
   ui: { color: "1d76db", description: "win-predict-ai-ui" },
   icons: { color: "fbca04", description: "win-predict-ai-icons" },
   data: { color: "0e8a16", description: "win-predict-ai-data" },
   app: { color: "d93f0b", description: "win-predict-ai" },
   admin: { color: "5319e7", description: "win-predict-ai-admin" },
+  ios: { color: "e99695", description: "win-predict-ai-ios" },
 };
 const REPO_SURFACE: Record<(typeof REPOS)[number], Surface> = {
   "onlyzoran/win-predict-ai-ui": "ui",
@@ -97,6 +99,7 @@ const REPO_SURFACE: Record<(typeof REPOS)[number], Surface> = {
   "onlyzoran/win-predict-ai-data": "data",
   "onlyzoran/win-predict-ai": "app",
   "onlyzoran/win-predict-ai-admin": "admin",
+  "onlyzoran/win-predict-ai-ios": "ios",
 };
 
 type Surface = (typeof SURFACES)[number];

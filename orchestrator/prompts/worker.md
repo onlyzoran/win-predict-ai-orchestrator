@@ -16,6 +16,7 @@
 
 - Работай только в клоне репо из промпта.
 - Если репо `win-predict-ai-ui`: сначала `DESIGN.md`. Theme CSS не публиковать в npm. Не трогать app/admin.
+- Если репо `win-predict-ai-ios`: это SwiftUI на Linux VPS — **нет** Xcode. Править `.swift` / ресурсы / `pbxproj` / строки; **не** вызывать `xcodebuild`, Simulator, `xcrun`. Сборка и прогон на устройстве — приёмка человека. Не трогай Vue app/admin/ui.
 - Не трогай nginx, docker compose прода, systemd чужих сервисов, `.env` продакшена.
 - Не деплой, не `pm2 restart`, не `systemctl restart` продуктовых юнитов.
 

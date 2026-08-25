@@ -13,6 +13,7 @@
 | [`win-predict-ai-data`](https://github.com/onlyzoran/win-predict-ai-data) | воркер данных |
 | [`win-predict-ai`](https://github.com/onlyzoran/win-predict-ai) | потребитель (Vue app) |
 | [`win-predict-ai-admin`](https://github.com/onlyzoran/win-predict-ai-admin) | потребитель (admin) |
+| [`win-predict-ai-ios`](https://github.com/onlyzoran/win-predict-ai-ios) | нативное iOS (SwiftUI, My Machines `worker.md`) |
 
 Goal Issues — в этом репо. Child issues — в таблице выше.
 
@@ -24,7 +25,7 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 Доска: [win-predict-ai](https://github.com/users/onlyzoran/projects/3) (приватная).
 
-Колонки: **Inbox** → **In Progress** → **Review** → **Ready to Release** → **Done**. Привязана к этому репо и пяти рабочим.
+Колонки: **Inbox** → **In Progress** → **Review** → **Ready to Release** → **Done**. Привязана к этому репо и шести рабочим.
 
 ## Статус
 

@@ -24,7 +24,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["ui", "icons", "data", "app", "admin"]
+        "enum": ["ui", "icons", "data", "app", "admin", "ios"]
       },
       "uniqueItems": true
     },
@@ -60,7 +60,7 @@
         },
         "surface": {
           "type": "string",
-          "enum": ["ui", "icons", "data", "app", "admin"]
+          "enum": ["ui", "icons", "data", "app", "admin", "ios"]
         },
         "repo": {
           "type": "string",
@@ -69,7 +69,8 @@
             "onlyzoran/win-predict-ai-icons",
             "onlyzoran/win-predict-ai-data",
             "onlyzoran/win-predict-ai",
-            "onlyzoran/win-predict-ai-admin"
+            "onlyzoran/win-predict-ai-admin",
+            "onlyzoran/win-predict-ai-ios"
           ]
         },
         "title": { "type": "string", "minLength": 1 },
