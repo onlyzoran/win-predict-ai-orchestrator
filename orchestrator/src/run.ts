@@ -20,6 +20,7 @@ import {
   waitForStablePackageVersion,
   type ConsumerBump,
 } from "./prerelease.js";
+import { formatPrLinkLines } from "./preview-url.js";
 import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -1387,7 +1388,7 @@ async function settleWithReviewer(
       /* ignore fallback error */
     }
   }
-  const prLines = prUrls.length ? prUrls.map((url) => `- ${url}`).join("\n") : "- (URL PR не найден)";
+  const prLines = formatPrLinkLines(prUrls);
   const baseState = {
     agentId: ctx.agentId,
     runId: ctx.runId,
@@ -1532,7 +1533,7 @@ async function finishNewIconWithoutMachine(
 ): Promise<string> {
   const { repo, number } = parseIssueUrl(issueUrl);
   addToProject(issueUrl, "Review", token);
-  const prLines = prUrls.map((url) => `- ${url}`).join("\n");
+  const prLines = formatPrLinkLines(prUrls);
   commentOnIssue(
     repo,
     number,
