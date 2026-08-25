@@ -21,6 +21,7 @@ ExecStart=/opt/cursor-workers/.local/bin/agent worker \
   --worker-dir /opt/cursor-workers/win-predict-ai-admin \
   --worker-dir /opt/cursor-workers/win-predict-ai-data \
   --worker-dir /opt/cursor-workers/win-predict-ai-ui \
+  --worker-dir /opt/cursor-workers/win-predict-ai-ios \
   start --verbose
 Restart=always
 RestartSec=10
