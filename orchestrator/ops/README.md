@@ -6,7 +6,9 @@
 
 Юнит: `cursor-worker.service` → `agent worker --name win-predict-vps`.
 
-Клоны: `/opt/cursor-workers/{win-predict-ai,win-predict-ai-admin,win-predict-ai-data,win-predict-ai-ui}`. Прод админки `/var/www/win-predict-ai-admin` сюда не монтировать.
+Клоны: `/opt/cursor-workers/{win-predict-ai,win-predict-ai-admin,win-predict-ai-data,win-predict-ai-ui,win-predict-ai-ios}`. Прод админки `/var/www/win-predict-ai-admin` сюда не монтировать.
+
+`win-predict-ai-ios` — исходники SwiftUI; на VPS нет Xcode, воркер только правит файлы и открывает PR.
 
 ## Board watch
 

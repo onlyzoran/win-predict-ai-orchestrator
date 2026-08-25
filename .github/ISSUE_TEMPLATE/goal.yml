@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Цель живёт только здесь. Карточка Inbox → In Progress (или комментарий `/orchestrate`) — оркестратор создаст child issues
-        в `ui` / `icons` / `data` / `app` / `admin`. Правки после Review: комментарий в этот issue и карточка снова In Progress.
+        в `ui` / `icons` / `data` / `app` / `admin` / `ios`. Правки после Review: комментарий в этот issue и карточка снова In Progress.
         Приёмка: Review → Ready to Release (вотчер смержит и уведёт в Done).
   - type: textarea
     id: outcome
@@ -28,6 +28,7 @@ body:
         - label: data (`win-predict-ai-data`)
         - label: app (`win-predict-ai`)
         - label: admin (`win-predict-ai-admin`)
+        - label: ios (`win-predict-ai-ios`)
   - type: textarea
     id: constraints
     attributes:
