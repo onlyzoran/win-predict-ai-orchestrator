@@ -10,6 +10,7 @@ import {
   taskMarker,
   type ChildIssueRef,
 } from "./child-issue.js";
+import { unmetDependencyIds } from "./depends.js";
 import {
   branchNameForPrerelease,
   bumpPackageOnBranch,
@@ -1967,17 +1968,17 @@ async function dispatchPlan(
     }
     try {
       if (task.depends_on.length) {
-        const unmet = task.depends_on.filter((id) => {
-          const depTask = plan.tasks.find((t) => t.id === id);
-          const dep = depTask
-            ? resolveChild(depTask, plan.goal_number, created, token)
-            : undefined;
-          if (!dep) return true;
-          if (dep.closed) return false;
-          return findOpenPrsForIssue(dep.url, token).length === 0;
-        });
+        const unmet = unmetDependencyIds(
+          task,
+          plan.tasks,
+          (id) => {
+            const depTask = plan.tasks.find((t) => t.id === id);
+            return depTask ? resolveChild(depTask, plan.goal_number, created, token) : undefined;
+          },
+          (depUrl) => findOpenPrsForIssue(depUrl, token).length > 0,
+        );
         if (unmet.length) {
-          notes.push(`${url} — жду PR у ${unmet.join(", ")}`);
+          notes.push(`${url} — жду ${unmet.join(", ")}`);
           continue;
         }
       }
@@ -2070,7 +2071,39 @@ function loadEvent(): IssueCommentEvent {
 }
 
 function isIdleDispatchNote(note: string): boolean {
-  return note.includes("уже запускали") || note.includes("уже закрыт");
+  return (
+    note.includes("уже запускали") ||
+    note.includes("уже закрыт") ||
+    note.includes(" — жду ") ||
+    note.includes("жду PR")
+  );
+}
+
+/**
+ * After a child advances (Review or Done), start plan tasks whose depends_on are now met.
+ * Same-repo chains wait for merge; cross-repo can start on open PR (prerelease).
+ */
+async function catchUpGoalByNumber(goalNumber: number, token: string): Promise<void> {
+  const goalUrl = `https://github.com/${GOAL_REPO}/issues/${goalNumber}`;
+  const comments = listIssueComments(GOAL_REPO, goalNumber, token);
+  const plan = extractStoredPlan(comments, goalNumber);
+  if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return;
+
+  console.log(`catch-up Goal #${goalNumber}`);
+  const notes = await dispatchPlan(plan, new Map(), token, { skipIfOpenPr: true });
+  const shouldReport = notes.some((n) => !isIdleDispatchNote(n));
+  if (!shouldReport) {
+    console.log(`catch-up Goal #${goalNumber}: nothing to start`);
+    return;
+  }
+  if (!(await commentDispatch(goalNumber, goalUrl, notes, token))) process.exitCode = 2;
+  await notifyTelegram(`Goal #${goalNumber}: догонка воркеров\n${goalUrl}`);
+}
+
+async function catchUpGoalWorkers(childBody: string, token: string): Promise<void> {
+  const goalNumber = parentGoalNumber(childBody);
+  if (!goalNumber) return;
+  await catchUpGoalByNumber(goalNumber, token);
 }
 
 async function commentDispatch(
@@ -2083,7 +2116,7 @@ async function commentDispatch(
   const allSkipped = notes.length > 0 && notes.every(isIdleDispatchNote);
   const machineDone = notes.some((n) => /\/pull\/\d+/.test(n) || n.includes(" — machine ") || n.includes(" — review "));
   const bounced = notes.some((n) => n.includes("review changes"));
-  const waiting = notes.some((n) => n.includes("жду PR"));
+  const waiting = notes.some((n) => n.includes("жду PR") || n.includes(" — жду "));
   const toReview = Boolean(token) && !failed && !allSkipped && machineDone && !bounced && !waiting;
   if (toReview) addToProject(goalUrl, "Review", token);
   const prefix = failed
@@ -2261,7 +2294,8 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
   if (state?.phase === "error" && !notesAfterLastPhase(comments, "error")) {
-    console.log(`skip goal #${item.number}: error, нет новых комментариев`);
+    console.log(`skip goal #${item.number}: error, try catch-up`);
+    await catchUpGoalByNumber(item.number, token);
     return;
   }
   if (isResourceBackoff(state, comments)) {
@@ -2321,6 +2355,7 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
   const task = taskFromBoardIssue(item);
   try {
     await dispatchTask(task, item.url, token, { skipIfOpenPr: false, notes: humanNotes });
+    await catchUpGoalWorkers(item.body, token);
     await maybePromoteGoal(item.body, token);
   } catch (err) {
     await reportChildFailure(item.url, task.id, err, token);
@@ -2864,6 +2899,7 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
     token,
   );
   await notifyTelegram(`Релиз Done\n${item.url}\n${notes.join("\n")}`);
+  await catchUpGoalWorkers(item.body, token);
   await maybePromoteGoalToDone(item.body, token);
   return true;
 }
