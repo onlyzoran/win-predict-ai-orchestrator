@@ -10,7 +10,7 @@
 
 ## Board watch
 
-Таймер `board-watch.timer` раз в 2 минуты (после окончания прошлого прогона) смотрит доску: **In Progress** (первый старт или после Review) → оркестратор или воркер; **Ready to Release** → ченджлог, merge PR, Done.
+Таймер `board-watch.timer` раз в 2 минуты (после окончания прошлого прогона) смотрит доску: **In Progress** (первый старт или после Review) → оркестратор или воркер; **Ready to Release** → bump версии + ченджлог, merge PR, Done.
 
 GitHub Actions для опроса доски не используем: короткий schedule там ненадёжен, ручной workflow с ноутбука запускал бы второй вотчер параллельно с таймером. Если VPS молчит — `systemctl start board-watch.service`.
 

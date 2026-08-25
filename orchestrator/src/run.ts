@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,16 @@ import {
   type ConsumerBump,
 } from "./prerelease.js";
 import { formatPrLinkLines } from "./preview-url.js";
+import {
+  bumpSemver,
+  buildVersionedChangelogEntry,
+  createChangelogFile,
+  insertVersionedChangelogEntry,
+  resolveBumpTypeFromFiles,
+  setPackageJsonVersion,
+  setPackageLockRootVersion,
+  stripPrerelease,
+} from "./release.js";
 import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -2328,105 +2338,17 @@ function cardFromIssue(item: BoardIssue): InventoryCard {
   };
 }
 
-function repoHasSemanticRelease(repo: string, token: string, ref: string): boolean {
-  try {
-    const raw = gh(
-      ["api", `repos/${repo}/contents/package.json?ref=${encodeURIComponent(ref)}`, "--jq", ".content"],
-      token,
-    );
-    const pkg = JSON.parse(Buffer.from(raw.replace(/\s/g, ""), "base64").toString("utf8")) as {
-      scripts?: Record<string, string>;
-      devDependencies?: Record<string, string>;
-      dependencies?: Record<string, string>;
-    };
-    const scripts = Object.values(pkg.scripts ?? {}).join(" ");
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-    return /semantic-release/.test(scripts) || Boolean(deps["semantic-release"]);
-  } catch {
-    return false;
-  }
+function ensureReleaseGitIdentity(cwd: string): void {
+  spawnSync("git", ["config", "user.name", "Dmitriy S"], { cwd, encoding: "utf8" });
+  spawnSync("git", ["config", "user.email", "onlyzoran@gmail.com"], { cwd, encoding: "utf8" });
 }
 
-function readRepoFile(
-  repo: string,
-  path: string,
-  ref: string,
-  token: string,
-): { text: string; sha: string } | null {
-  try {
-    const raw = gh(
-      [
-        "api",
-        `repos/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`,
-        "--jq",
-        "{content:.content,sha:.sha}",
-      ],
-      token,
-    );
-    const parsed = JSON.parse(raw) as { content: string; sha: string };
-    if (!parsed.content || !parsed.sha) return null;
-    return {
-      text: Buffer.from(parsed.content.replace(/\s/g, ""), "base64").toString("utf8"),
-      sha: parsed.sha,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeRepoFile(
-  repo: string,
-  path: string,
-  branch: string,
-  content: string,
-  sha: string,
-  message: string,
-  token: string,
-): void {
-  const dir = mkdtempSync(join(tmpdir(), "orch-"));
-  const file = join(dir, "payload.json");
-  writeFileSync(
-    file,
-    JSON.stringify({
-      message,
-      content: Buffer.from(content, "utf8").toString("base64"),
-      branch,
-      sha,
-    }),
-  );
-  gh(["api", "--method", "PUT", `repos/${repo}/contents/${path}`, "--input", file], token);
-}
-
-function buildChangelogEntry(prTitle: string, prUrl: string, issueUrl: string): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const title = prTitle.replace(/^\s+|\s+$/g, "") || "Release";
-  return [
-    `## Unreleased (${today})`,
-    "",
-    `* ${title} ([PR](${prUrl}), [issue](${issueUrl}))`,
-    "",
-    "",
-  ].join("\n");
-}
-
-function insertChangelogEntry(existing: string, entry: string): string {
-  const trimmed = existing.replace(/^\uFEFF/, "");
-  const bullet = entry.split("\n").find((line) => line.startsWith("* "));
-  if (bullet && /^## Unreleased\b/m.test(trimmed)) {
-    return trimmed.replace(/^(## Unreleased[^\n]*\n)/m, `$1\n${bullet}\n`);
-  }
-  const heading = trimmed.match(/^# [^\n]+\n+/);
-  if (heading) {
-    return `${heading[0]}${entry}${trimmed.slice(heading[0].length)}`;
-  }
-  return `${entry}${trimmed}`;
-}
-
-function updateChangelogForPr(
+/** Перед merge: bump package.json (+ lock) и CHANGELOG с версией. */
+function prepareReleaseForPr(
   prUrl: string,
   issueUrl: string,
   token: string,
-): { updated: boolean; note: string } {
+): { version?: string; note: string } {
   const { repo, number } = parsePrUrl(prUrl);
   const raw = gh(
     ["pr", "view", String(number), "-R", repo, "--json", "title,headRefName,url"],
@@ -2434,27 +2356,146 @@ function updateChangelogForPr(
   );
   const pr = JSON.parse(raw) as { title: string; headRefName: string; url: string };
   const branch = pr.headRefName;
-  if (!branch) return { updated: false, note: "нет head ветки PR" };
-  if (repoHasSemanticRelease(repo, token, branch)) {
-    return { updated: false, note: "CHANGELOG обновит semantic-release после merge" };
-  }
-  const file = readRepoFile(repo, "CHANGELOG.md", branch, token);
-  if (!file) return { updated: false, note: "CHANGELOG.md нет — пропуск" };
-  if (file.text.includes(pr.url) || file.text.includes(prUrl)) {
-    return { updated: false, note: "запись уже есть" };
-  }
-  const next = insertChangelogEntry(file.text, buildChangelogEntry(pr.title, pr.url, issueUrl));
-  if (next === file.text) return { updated: false, note: "ченджлог без изменений" };
-  writeRepoFile(
-    repo,
-    "CHANGELOG.md",
-    branch,
-    next,
-    file.sha,
-    `docs: changelog for ${pr.title.slice(0, 60)}`,
+  if (!branch) return { note: "нет head ветки PR" };
+
+  const filesRaw = gh(
+    ["api", `repos/${repo}/pulls/${number}/files`, "--jq", "[.[]|{path:.filename,status:.status}]"],
     token,
   );
-  return { updated: true, note: "CHANGELOG.md обновлён" };
+  const files = JSON.parse(filesRaw || "[]") as Array<{ path: string; status?: string }>;
+  const bumpType = resolveBumpTypeFromFiles(repo, files, pr.title);
+
+  const dir = mkdtempSync(join(tmpdir(), "orch-release-"));
+  try {
+    const cloneUrl = `https://x-access-token:${token}@github.com/${repo}.git`;
+    const clone = spawnSync("git", ["clone", "--depth", "50", "--branch", branch, cloneUrl, dir], {
+      encoding: "utf8",
+    });
+    if (clone.status !== 0) {
+      throw new Error((clone.stderr || clone.stdout || "git clone failed").trim());
+    }
+    spawnSync("git", ["remote", "set-url", "origin", `https://github.com/${repo}.git`], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    ensureReleaseGitIdentity(dir);
+
+    const pkgPath = join(dir, "package.json");
+    if (!existsSync(pkgPath)) {
+      return { note: "package.json нет — пропуск bump" };
+    }
+    const pkgRaw = readFileSync(pkgPath, "utf8");
+    const pkg = JSON.parse(pkgRaw) as { version?: string };
+    if (!pkg.version) {
+      return { note: "в package.json нет version — пропуск bump" };
+    }
+
+    const changelogPath = join(dir, "CHANGELOG.md");
+    const changelogExists = existsSync(changelogPath);
+    const changelogText = changelogExists ? readFileSync(changelogPath, "utf8") : "";
+
+    const mainVersionResult = spawnSync(
+      "git",
+      ["show", "origin/main:package.json"],
+      { cwd: dir, encoding: "utf8" },
+    );
+    let mainVersion: string | null = null;
+    if (mainVersionResult.status === 0 && mainVersionResult.stdout) {
+      try {
+        mainVersion = stripPrerelease(
+          (JSON.parse(mainVersionResult.stdout) as { version?: string }).version || "",
+        );
+      } catch {
+        mainVersion = null;
+      }
+    }
+    // shallow clone may lack origin/main — fetch tip
+    if (!mainVersion) {
+      spawnSync("git", ["fetch", "origin", "main", "--depth", "1"], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, GH_TOKEN: token, GITHUB_TOKEN: token },
+      });
+      const again = spawnSync("git", ["show", "origin/main:package.json"], {
+        cwd: dir,
+        encoding: "utf8",
+      });
+      if (again.status === 0 && again.stdout) {
+        try {
+          mainVersion = stripPrerelease(
+            (JSON.parse(again.stdout) as { version?: string }).version || "",
+          );
+        } catch {
+          mainVersion = null;
+        }
+      }
+    }
+
+    const currentBase = stripPrerelease(pkg.version);
+    const alreadyBumped =
+      Boolean(mainVersion) &&
+      currentBase !== mainVersion &&
+      (changelogText.includes(pr.url) || changelogText.includes(prUrl)) &&
+      !/^## Unreleased\b/m.test(changelogText);
+    if (alreadyBumped) {
+      return {
+        version: currentBase,
+        note: `релиз уже подготовлен (${currentBase})`,
+      };
+    }
+
+    const nextVersion = bumpSemver(pkg.version, bumpType);
+    writeFileSync(pkgPath, setPackageJsonVersion(pkgRaw, nextVersion));
+
+    const lockPath = join(dir, "package-lock.json");
+    if (existsSync(lockPath)) {
+      writeFileSync(lockPath, setPackageLockRootVersion(readFileSync(lockPath, "utf8"), nextVersion));
+    }
+
+    const entry = buildVersionedChangelogEntry(nextVersion, pr.title, pr.url, issueUrl);
+    writeFileSync(
+      changelogPath,
+      changelogExists
+        ? insertVersionedChangelogEntry(changelogText, entry)
+        : createChangelogFile(nextVersion, entry),
+    );
+
+    const status = spawnSync("git", ["status", "--porcelain"], { cwd: dir, encoding: "utf8" });
+    if (!(status.stdout || "").trim()) {
+      return { version: nextVersion, note: "релиз без изменений на диске" };
+    }
+
+    spawnSync("git", ["add", "package.json", "CHANGELOG.md", "package-lock.json"], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    const commit = spawnSync("git", ["commit", "-m", `chore(release): ${nextVersion}`], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    if (commit.status !== 0) {
+      throw new Error((commit.stderr || commit.stdout || "git commit failed").trim());
+    }
+    const push = spawnSync(
+      "git",
+      ["push", `https://x-access-token:${token}@github.com/${repo}.git`, `HEAD:${branch}`],
+      { cwd: dir, encoding: "utf8" },
+    );
+    if (push.status !== 0) {
+      throw new Error((push.stderr || push.stdout || "git push failed").trim());
+    }
+
+    return {
+      version: nextVersion,
+      note: `bump ${bumpType} → ${nextVersion}, CHANGELOG обновлён`,
+    };
+  } finally {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 class ReleaseConflictError extends Error {
@@ -2726,10 +2767,12 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
     }
   } else {
     let mergeSha: string | undefined;
+    let releasedVersion: string | undefined;
     for (const prUrl of prUrls) {
       try {
-        const changelog = updateChangelogForPr(prUrl, item.url, token);
-        notes.push(`${prUrl}: ${changelog.note}`);
+        const prepared = prepareReleaseForPr(prUrl, item.url, token);
+        notes.push(`${prUrl}: ${prepared.note}`);
+        if (prepared.version) releasedVersion = prepared.version;
         const merged = mergePullRequest(prUrl, token);
         notes.push(merged);
         try {
@@ -2769,7 +2812,14 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
       try {
         const packageName = packageNameForLibraryRepo(item.repo);
         if (packageName) {
-          const stable = waitForStablePackageVersion(item.repo, packageName, token, gh, mergeSha);
+          const stable = waitForStablePackageVersion(
+            item.repo,
+            packageName,
+            token,
+            gh,
+            mergeSha,
+            releasedVersion,
+          );
           notes.push(`стабильная ${packageName}@${stable}`);
           const promoteNotes = await promoteStableIntoGoalConsumers(
             item.body,
@@ -2806,7 +2856,7 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
     item.number,
     formatDispatchComment(
       { phase: "review", prUrls, at: new Date().toISOString() },
-      ["**Релиз.** Ченджлог и merge сделаны — колонка Done.", ...notes.map((n) => `- ${n}`)],
+      ["**Релиз.** Версия, ченджлог и merge сделаны — колонка Done.", ...notes.map((n) => `- ${n}`)],
     ),
     token,
   );

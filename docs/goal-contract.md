@@ -20,7 +20,7 @@ Goal — одна высокоуровневая цель. Живёт тольк
 
 Правки после Review: комментарий **в issue** (Goal или child) и карточка **Review → In Progress**. Комментарий без смены колонки — только заметка, агент не стартует.
 
-Приёмка: когда результат ок — **Review → Ready to Release**. Вотчер обновит ченджлог (если есть `CHANGELOG.md` и нет semantic-release), смержит PR и перенесёт карточку в **Done**. Для ui/icons после merge дождётся стабильный publish и заменит prerelease-пины в открытых PR app/admin того же Goal.
+Приёмка: когда результат ок — **Review → Ready to Release**. Вотчер **поднимет версию** в `package.json` (patch по умолчанию; `[minor]`/`[major]`/`[patch]` в заголовке PR; для ui/icons — minor при новых компонентах/иконках), запишет секцию в `CHANGELOG.md`, смержит PR и перенесёт карточку в **Done**. Для ui/icons после merge дождётся publish этой версии и заменит prerelease-пины в открытых PR app/admin того же Goal.
 
 ## Prerelease библиотек
 
@@ -28,7 +28,7 @@ Goal — одна высокоуровневая цель. Живёт тольк
 
 1. Триггерит `prerelease.yml` → версия `{base}-pr.{PR}.{sha7}` в GitHub Packages (dist-tag `pr-{PR}`)
 2. Подтягивает точную версию в feature-PR `app` / `admin` того же Goal (если PR нет — открывает bump-PR)
-3. На Ready to Release библиотеки после merge → стабильный `release.yml`, затем promote в те же consumer PR
+3. На Ready to Release библиотеки: релизер бампает стабильную версию + CHANGELOG → merge → `release.yml` публикует уже зафиксированную версию → promote в те же consumer PR
 
 Потребительские задачи в плане — про интеграцию, не про ручной bump.
 
@@ -52,7 +52,7 @@ Goal — одна высокоуровневая цель. Живёт тольк
 | Inbox | человек | цель записана, оркестратор ещё не брал |
 | In Progress | человек или оркестратор | человек просит работу (первый раз или правка); оркестратор/воркер исполняет |
 | Review | оркестратор | PR прошёл ревьюера (pass/blocked) или ревьюер исчерпал правки. Замечания — в issue, карточку верни в In Progress. Ок — Ready to Release |
-| Ready to Release | человек | приёмка пройдена; вотчер: ченджлог → подтянуть main → merge PR → Done. Конфликт с main → In Progress (воркер MODE B) |
+| Ready to Release | человек | приёмка пройдена; вотчер: bump версии + ченджлог → подтянуть main → merge PR → Done. Конфликт с main → In Progress (воркер MODE B) |
 | Done | оркестратор (после Ready to Release) | PR смержен, критерий готовности выполнен |
 
 Черновики и идеи без шаблона в Project не кладём.

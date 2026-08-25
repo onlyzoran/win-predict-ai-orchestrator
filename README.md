@@ -28,6 +28,6 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 ## Статус
 
-Таймер `board-watch` на VPS раз в 2 мин видит карточки **In Progress** и будит оркестратор (Goal) или воркера (child — в т.ч. ручной issue в рабочем репо без Goal). После PR local-ревьюер либо оставляет child в In Progress (правки), либо двигает в **Review**. Замечания пиши в issue и верни карточку в In Progress. Когда ок — перенеси в **Ready to Release**: вотчер обновит ченджлог, смержит PR и поставит **Done**.
+Таймер `board-watch` на VPS раз в 2 мин видит карточки **In Progress** и будит оркестратор (Goal) или воркера (child — в т.ч. ручной issue в рабочем репо без Goal). После PR local-ревьюер либо оставляет child в In Progress (правки), либо двигает в **Review**. Замечания пиши в issue и верни карточку в In Progress. Когда ок — перенеси в **Ready to Release**: вотчер поднимет версию, обновит ченджлог, смержит PR и поставит **Done**.
 
 После PR в ui/icons оркестратор публикует **prerelease** в GitHub Packages и подтягивает её в feature-PR app/admin того же Goal, чтобы интеграция шла до merge библиотеки.

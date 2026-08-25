@@ -373,11 +373,15 @@ export function waitForStablePackageVersion(
   token: string,
   gh: GhFn,
   afterMergeSha?: string,
+  expectedVersion?: string,
 ): string {
   const started = Date.now();
   let lastError = "";
   while (Date.now() - started < STABLE_WAIT_MS) {
     try {
+      if (expectedVersion && npmViewVersion(packageName, expectedVersion, token)) {
+        return expectedVersion;
+      }
       // Prefer newest v* tag on main after release.yml.
       const tag = gh(
         ["api", `repos/${repo}/tags?per_page=5`, "--jq", ".[0].name // empty"],
@@ -385,7 +389,11 @@ export function waitForStablePackageVersion(
       );
       if (/^v\d+\.\d+\.\d+$/.test(tag)) {
         const version = tag.slice(1);
-        if (npmViewVersion(packageName, version, token)) return version;
+        if (expectedVersion && version !== expectedVersion) {
+          /* keep waiting for expected */
+        } else if (npmViewVersion(packageName, version, token)) {
+          return version;
+        }
       }
       const releaseRun = gh(
         [
@@ -418,7 +426,12 @@ export function waitForStablePackageVersion(
         }
         return true;
       });
-      if (ok && /^v\d+\.\d+\.\d+$/.test(tag) && npmViewVersion(packageName, tag.slice(1), token)) {
+      if (
+        ok &&
+        /^v\d+\.\d+\.\d+$/.test(tag) &&
+        (!expectedVersion || tag.slice(1) === expectedVersion) &&
+        npmViewVersion(packageName, tag.slice(1), token)
+      ) {
         return tag.slice(1);
       }
     } catch (err) {
@@ -427,7 +440,7 @@ export function waitForStablePackageVersion(
     sleepSync(STABLE_POLL_MS);
   }
   throw new Error(
-    `не дождался стабильной версии ${packageName} в ${repo}${lastError ? `: ${lastError.slice(0, 200)}` : ""}`,
+    `не дождался стабильной версии ${packageName}${expectedVersion ? `@${expectedVersion}` : ""} в ${repo}${lastError ? `: ${lastError.slice(0, 200)}` : ""}`,
   );
 }
 
