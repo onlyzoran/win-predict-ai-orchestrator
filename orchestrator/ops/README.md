@@ -18,7 +18,7 @@ GitHub Actions для опроса доски не используем: кор�
 
 ### Поставить один раз
 
-На VPS, от root. PAT тот же, что секрет `ORCHESTRATOR_GITHUB_TOKEN`.
+На VPS, от root. PAT тот же, что секрет `GITHUB_PAT`.
 
 ```bash
 install -d -o cursor-worker -g cursor-worker /opt/cursor-workers/win-predict-ai-orchestrator
@@ -27,7 +27,7 @@ sudo -u cursor-worker git clone https://github.com/onlyzoran/win-predict-ai-orch
 chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/board-watch.sh
 sudo -u cursor-worker bash -lc 'cd /opt/cursor-workers/win-predict-ai-orchestrator && npm ci'
 
-# В /etc/cursor-worker.env: CURSOR_API_KEY, ORCHESTRATOR_GITHUB_TOKEN,
+# В /etc/cursor-worker.env: CURSOR_API_KEY, GITHUB_PAT,
 # TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID (те же, что GitHub secrets).
 # Без TELEGRAM_* вотчер и воркеры в чат не пишут.
 
@@ -37,7 +37,7 @@ systemctl daemon-reload
 systemctl enable --now board-watch.timer
 ```
 
-Приватный clone: если HTTPS без ключа не идёт, `git clone https://<TOKEN>@github.com/onlyzoran/win-predict-ai-orchestrator.git` один раз, в remote токен не оставлять — дальше `board-watch.sh` ходит через `ORCHESTRATOR_GITHUB_TOKEN`.
+Приватный clone: если HTTPS без ключа не идёт, `git clone https://<TOKEN>@github.com/onlyzoran/win-predict-ai-orchestrator.git` один раз, в remote токен не оставлять — дальше `board-watch.sh` ходит через `GITHUB_PAT`.
 
 ### Проверка
 

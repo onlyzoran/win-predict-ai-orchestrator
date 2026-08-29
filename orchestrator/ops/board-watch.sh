@@ -4,14 +4,17 @@ set -euo pipefail
 ROOT=/opt/cursor-workers/win-predict-ai-orchestrator
 cd "$ROOT"
 
-if [[ -n "${ORCHESTRATOR_GITHUB_TOKEN:-}" ]]; then
-  export GH_TOKEN="$ORCHESTRATOR_GITHUB_TOKEN"
-  export GITHUB_TOKEN="${GITHUB_TOKEN:-$ORCHESTRATOR_GITHUB_TOKEN}"
+# Prefer GITHUB_PAT; fall back to legacy ORCHESTRATOR_GITHUB_TOKEN during migration.
+GITHUB_PAT="${GITHUB_PAT:-${ORCHESTRATOR_GITHUB_TOKEN:-}}"
+if [[ -n "${GITHUB_PAT}" ]]; then
+  export GITHUB_PAT
+  export GH_TOKEN="$GITHUB_PAT"
+  export GITHUB_TOKEN="${GITHUB_TOKEN:-$GITHUB_PAT}"
 fi
 
 lock_before="$(git rev-parse HEAD:package-lock.json 2>/dev/null || true)"
-if [[ -n "${ORCHESTRATOR_GITHUB_TOKEN:-}" ]]; then
-  basic="$(printf 'x-access-token:%s' "$ORCHESTRATOR_GITHUB_TOKEN" | openssl base64 -A)"
+if [[ -n "${GITHUB_PAT}" ]]; then
+  basic="$(printf 'x-access-token:%s' "$GITHUB_PAT" | openssl base64 -A)"
   git -c "http.extraheader=AUTHORIZATION: basic ${basic}" fetch origin
 else
   git fetch origin

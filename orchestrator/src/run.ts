@@ -222,12 +222,16 @@ type Inventory = {
   board?: InventoryBoard;
 };
 
+function githubPat(): string {
+  return process.env.GITHUB_PAT || process.env.ORCHESTRATOR_GITHUB_TOKEN || "";
+}
+
 function commentToken(): string {
-  return process.env.GITHUB_TOKEN || process.env.ORCHESTRATOR_GITHUB_TOKEN || "";
+  return process.env.GITHUB_TOKEN || githubPat() || "";
 }
 
 function writeToken(): string {
-  return process.env.ORCHESTRATOR_GITHUB_TOKEN || "";
+  return githubPat();
 }
 
 function sleep(ms: number): Promise<void> {
@@ -3148,7 +3152,7 @@ async function watchBoard(): Promise<void> {
     const inventory = writeInventory(readInventory());
     console.log(`inventory ${INVENTORY_PATH}: ${inventory.active.length}/${inventory.slots}`);
     const token = writeToken();
-    if (!token) throw new Error("нет секрета ORCHESTRATOR_GITHUB_TOKEN");
+    if (!token) throw new Error("нет секрета GITHUB_PAT");
     ensureStatusOptions(token);
     const all = listProjectIssues(token);
     inventory.board = {
@@ -3251,7 +3255,7 @@ async function main(): Promise<void> {
 
   if (!redo && stored) {
     if (!token) {
-      commentOnGoal(issue.number, "Нет `ORCHESTRATOR_GITHUB_TOKEN` — воркеров не запускаю.");
+      commentOnGoal(issue.number, "Нет `GITHUB_PAT` — воркеров не запускаю.");
       return;
     }
     try {
@@ -3268,7 +3272,7 @@ async function main(): Promise<void> {
   if (!token) {
     commentOnGoal(
       issue.number,
-      "План готов, но нет секрета `ORCHESTRATOR_GITHUB_TOKEN` (PAT с `repo` + `project` на все шесть репо). Child issues не созданы.",
+      "План готов, но нет секрета `GITHUB_PAT` (PAT с `repo` + `project` на все шесть репо). Child issues не созданы.",
     );
     return;
   }

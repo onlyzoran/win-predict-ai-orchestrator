@@ -29,7 +29,7 @@ jobs:
       - name: Decompose Goal, open issues, dispatch workers
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          ORCHESTRATOR_GITHUB_TOKEN: ${{ secrets.ORCHESTRATOR_GITHUB_TOKEN }}
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CURSOR_MACHINE_NAME: win-predict-vps
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

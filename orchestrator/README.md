@@ -35,7 +35,7 @@ orchestrator/
 | Secret | Зачем |
 |---|---|
 | `CURSOR_API_KEY` | персональный user key; менеджер и ревьюер (local) и воркеры (My Machines). Тот же ключ / тот же Cursor-аккаунт, что у `agent worker start` на VPS |
-| `ORCHESTRATOR_GITHUB_TOKEN` | PAT: `repo` + `project` + **`read:packages`** (prerelease bump в app/admin из GitHub Packages); в сессии воркера как `$GH_TOKEN` |
+| `GITHUB_PAT` | PAT: `repo` + `project` + **`read:packages`** (prerelease bump в app/admin из GitHub Packages); в сессии воркера как `$GH_TOKEN` |
 | `TELEGRAM_BOT_TOKEN` | бот для коротких событий (не сырой лог, не каждый тик таймера) |
 | `TELEGRAM_CHAT_ID` | чат, куда писать |
 
