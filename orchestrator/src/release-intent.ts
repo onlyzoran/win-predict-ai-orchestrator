@@ -21,3 +21,12 @@ export function isReleaseIntent(text: string): boolean {
   if (RELEASE_NEGATION_RE.test(normalized)) return false;
   return RELEASE_INTENT_RE.test(` ${normalized} `);
 }
+
+/**
+ * Фазы, в которых «релизь» на In Progress запускает релизер.
+ * `reviewing` — ревьюер мог зависнуть после claim, не дописав `review`;
+ * приёмка человека важнее.
+ */
+export function isReleaseablePhase(phase: string | undefined): boolean {
+  return phase === "review" || phase === "releasing" || phase === "reviewing";
+}

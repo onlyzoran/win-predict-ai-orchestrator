@@ -32,7 +32,7 @@ import {
   setPackageLockRootVersion,
   stripPrerelease,
 } from "./release.js";
-import { isReleaseIntent } from "./release-intent.js";
+import { isReleaseablePhase, isReleaseIntent } from "./release-intent.js";
 import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
 import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
 
@@ -718,7 +718,8 @@ function shouldReleaseFromBoard(
   if (!isReleaseIntent(notesAfterLastReview(comments))) return false;
   if (lastReleaseConflictNote(comments)) return false;
   const phase = state?.phase;
-  if (phase === "review" || phase === "releasing") return true;
+  // reviewing: claim без финального review — не глотать «релизь» до WORKING_STALE.
+  if (isReleaseablePhase(phase)) return true;
   if (phase === "error") {
     const lastError = [...comments]
       .reverse()

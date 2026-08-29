@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isReleaseIntent } from "./release-intent.js";
+import { isReleaseablePhase, isReleaseIntent } from "./release-intent.js";
 
 describe("isReleaseIntent", () => {
   it("ловат типичные фразы приёмки", () => {
@@ -30,5 +30,19 @@ describe("isReleaseIntent", () => {
     ]) {
       assert.equal(isReleaseIntent(phrase), false, phrase);
     }
+  });
+});
+
+describe("isReleaseablePhase", () => {
+  it("review / releasing / reviewing — да", () => {
+    assert.equal(isReleaseablePhase("review"), true);
+    assert.equal(isReleaseablePhase("releasing"), true);
+    assert.equal(isReleaseablePhase("reviewing"), true);
+  });
+
+  it("working / error / пусто — нет (error отдельно в board)", () => {
+    assert.equal(isReleaseablePhase("working"), false);
+    assert.equal(isReleaseablePhase("error"), false);
+    assert.equal(isReleaseablePhase(undefined), false);
   });
 });
