@@ -24,8 +24,14 @@ describe("previewUrlForPr", () => {
     );
   });
 
-  it("admin/data — без preview", () => {
-    assert.equal(previewUrlForPr("https://github.com/onlyzoran/win-predict-ai-admin/pull/3"), undefined);
+  it("admin VPS preview", () => {
+    assert.equal(
+      previewUrlForPr("https://github.com/onlyzoran/win-predict-ai-admin/pull/3"),
+      "https://win-predict-ai.com/admin-preview/pr-3/",
+    );
+  });
+
+  it("data — без preview", () => {
     assert.equal(previewUrlForPr("https://github.com/onlyzoran/win-predict-ai-data/pull/1"), undefined);
   });
 });
@@ -45,10 +51,13 @@ describe("formatPrLinkLines", () => {
     );
   });
 
-  it("только PR для admin", () => {
+  it("PR + Demo для admin", () => {
     assert.equal(
       formatPrLinkLines(["https://github.com/onlyzoran/win-predict-ai-admin/pull/3"]),
-      "- https://github.com/onlyzoran/win-predict-ai-admin/pull/3",
+      [
+        "- https://github.com/onlyzoran/win-predict-ai-admin/pull/3",
+        "- Demo: https://win-predict-ai.com/admin-preview/pr-3/",
+      ].join("\n"),
     );
   });
 });

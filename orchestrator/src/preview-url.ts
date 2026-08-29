@@ -13,6 +13,9 @@ export function previewUrlForPr(prUrl: string): string | undefined {
   if (repo === "onlyzoran/win-predict-ai") {
     return `http://202.71.15.138/win-predict-ai-preview/pr-${n}/`;
   }
+  if (repo === "onlyzoran/win-predict-ai-admin") {
+    return `https://win-predict-ai.com/admin-preview/pr-${n}/`;
+  }
   return undefined;
 }
 
