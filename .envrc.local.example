@@ -1,0 +1,3 @@
+# Optional local overrides only (raw secrets). Never commit.
+# Example: export CURSOR_API_KEY=...
+# Prefer Infisical via the committed .envrc instead.

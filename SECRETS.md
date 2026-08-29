@@ -12,12 +12,41 @@ VPS: `win-predict-vps` (`202.71.15.138`) · stack: `/opt/infisical`
 | VPS runtime env | `/etc/cursor-worker.env` (rendered by Infisical Agent from **prod**) |
 | VPS agent credentials | `/etc/infisical/client-id`, `client-secret` (identity `vps-cursor-worker`) |
 | GitHub Actions bootstrap | Repo secrets `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` only (`ci-github-actions`) |
-| Local / Cursor | Infisical CLI + direnv (see step below when enabled) |
+| Local / Cursor | Infisical CLI + direnv → **Development** (`dev`); see below |
+
 
 Project id: `dfa13c01-4d8c-48e3-b725-b56b1a36f338` · slug: `win-predict-ai-s-vm-f`  
 Machine identities: `vps-cursor-worker`, `ci-github-actions` (Viewer → Production).
 
 **Critical:** a Postgres backup without `ENCRYPTION_KEY` cannot be decrypted. Store the key off this VPS.
+
+## Local development (CLI + direnv)
+
+One-time on your Mac:
+
+```bash
+brew install infisical/get-cli/infisical direnv
+# zsh hook (once):
+echo 'eval "$(direnv hook zsh)"' >> ~/.zshrc && source ~/.zshrc
+```
+
+Then in this repo:
+
+```bash
+infisical login --domain https://secrets.win-predict-ai.com
+# browser / email login as your Infisical user (needs access to project win-predict-ai)
+cd /path/to/win-predict-ai-orchestrator
+direnv allow
+# check names only:
+env | grep -E '^(CURSOR_API_KEY|GITHUB_PAT|TELEGRAM_)=' | cut -d= -f1
+```
+
+Committed files: `.infisical.json` (domain + project id), `.envrc` (no secret values).  
+Gitignored: `.env`, `.env.*`, `.envrc.local` (optional manual overrides).
+
+Default env is **dev**. For prod locally (rare): `INFISICAL_ENV=prod direnv allow`.
+
+Cursor’s integrated terminal uses the same zsh + direnv once the hook is in `~/.zshrc`.
 
 ## Add a new secret
 
