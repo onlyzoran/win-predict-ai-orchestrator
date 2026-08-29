@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Win Predict HQ — от цели до релиза</title>
+    <meta
+      name="description"
+      content="Штаб управления целями: одна карточка на доске — план, исполнение, ревью и релиз без ручной диспетчеризации."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230c1016'/%3E%3Ccircle cx='8' cy='8' r='3.5' fill='%233ecfbe'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #0c1016;
+        --bg-mid: #121821;
+        --raise: #1a222e;
+        --line: rgba(232, 237, 233, 0.1);
+        --text: #e8ede9;
+        --muted: #8d978f;
+        --accent: #3ecfbe;
+        --accent-soft: rgba(62, 207, 190, 0.14);
+        --warm: #d4a15a;
+        --review: #7aa2d4;
+        --done: #8fb56f;
+        --font-display: "Syne", sans-serif;
+        --font-body: "Manrope", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100%;
+        color: var(--text);
+        font: 500 17px/1.55 var(--font-body);
+        background: var(--bg);
+        overflow-x: hidden;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      /* —— Hero —— */
+      .hero {
+        position: relative;
+        min-height: 100svh;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: clamp(24px, 4vw, 48px);
+        padding-bottom: clamp(40px, 8vh, 72px);
+        isolation: isolate;
+      }
+
+      .hero-bg {
+        position: absolute;
+        inset: 0;
+        z-index: -2;
+        background:
+          radial-gradient(ellipse 90% 60% at 70% 20%, rgba(62, 207, 190, 0.12), transparent 55%),
+          radial-gradient(ellipse 70% 50% at 10% 80%, rgba(122, 162, 212, 0.08), transparent 50%),
+          linear-gradient(180deg, #0c1016 0%, #0e141c 45%, #121821 100%);
+      }
+
+      .hero-board {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        opacity: 0.22;
+        pointer-events: none;
+        mask-image: linear-gradient(180deg, transparent 0%, #000 25%, #000 55%, transparent 92%);
+      }
+
+      .hero-col {
+        background: rgba(255, 255, 255, 0.02);
+        border-left: 1px solid var(--line);
+        padding: 18vh 1.2rem 0;
+      }
+
+      .hero-col:first-child {
+        border-left: none;
+      }
+
+      .hero-col span {
+        display: block;
+        font: 700 11px/1 var(--font-display);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 1rem;
+      }
+
+      .ghost-card {
+        height: 72px;
+        margin-bottom: 10px;
+        border-radius: 6px;
+        background: rgba(232, 237, 233, 0.04);
+        border: 1px solid rgba(232, 237, 233, 0.06);
+      }
+
+      .ghost-card.tall {
+        height: 96px;
+      }
+
+      .brand {
+        font: 800 clamp(2.8rem, 9vw, 5.5rem) / 0.95 var(--font-display);
+        letter-spacing: -0.03em;
+        margin: 0 0 1.25rem;
+        max-width: 14ch;
+      }
+
+      .brand em {
+        font-style: normal;
+        color: var(--accent);
+      }
+
+      .hero h1 {
+        font: 600 clamp(1.15rem, 2.4vw, 1.45rem) / 1.35 var(--font-body);
+        margin: 0 0 0.75rem;
+        max-width: 28ch;
+        color: var(--text);
+      }
+
+      .hero-lead {
+        margin: 0 0 1.75rem;
+        max-width: 38ch;
+        color: var(--muted);
+        font-weight: 500;
+        font-size: 1.05rem;
+      }
+
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1rem;
+        align-items: center;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.85rem 1.35rem;
+        border-radius: 999px;
+        font: 700 0.95rem/1 var(--font-body);
+        border: none;
+        cursor: pointer;
+        text-decoration: none !important;
+        transition: transform 0.2s ease, background 0.2s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: #0c1016;
+      }
+
+      .btn-primary:hover {
+        background: #5fd9cb;
+      }
+
+      .btn-ghost {
+        background: transparent;
+        color: var(--muted);
+        padding-left: 0.25rem;
+      }
+
+      .btn-ghost:hover {
+        color: var(--text);
+      }
+
+      /* —— Sections —— */
+      section {
+        padding: clamp(64px, 12vh, 120px) clamp(24px, 4vw, 48px);
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      .section-label {
+        font: 700 12px/1 var(--font-display);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 0.85rem;
+      }
+
+      section h2 {
+        font: 700 clamp(1.75rem, 4vw, 2.4rem) / 1.15 var(--font-display);
+        letter-spacing: -0.02em;
+        margin: 0 0 0.75rem;
+        max-width: 22ch;
+      }
+
+      .section-lead {
+        margin: 0 0 2.5rem;
+        color: var(--muted);
+        max-width: 42ch;
+        font-size: 1.05rem;
+      }
+
+      /* —— Cycle —— */
+      .cycle {
+        background: var(--bg-mid);
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        max-width: none;
+        padding-left: clamp(24px, 4vw, 48px);
+        padding-right: clamp(24px, 4vw, 48px);
+      }
+
+      .cycle-inner {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        position: relative;
+      }
+
+      .col {
+        background: var(--raise);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 1rem 1rem 1.15rem;
+        min-height: 160px;
+        opacity: 0;
+        transform: translateY(12px);
+        transition:
+          opacity 0.55s ease,
+          transform 0.55s ease,
+          border-color 0.35s ease,
+          box-shadow 0.35s ease;
+      }
+
+      .col.visible {
+        opacity: 1;
+        transform: none;
+      }
+
+      .col.active {
+        border-color: rgba(62, 207, 190, 0.45);
+        box-shadow: 0 0 0 1px rgba(62, 207, 190, 0.12);
+      }
+
+      .col-name {
+        font: 700 11px/1 var(--font-display);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 0.65rem;
+      }
+
+      .col.active .col-name {
+        color: var(--accent);
+      }
+
+      .col h3 {
+        font: 700 1.05rem/1.25 var(--font-display);
+        margin: 0 0 0.4rem;
+      }
+
+      .col p {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+
+      .traveler {
+        position: absolute;
+        top: -14px;
+        left: 0;
+        width: calc(25% - 9px);
+        height: 8px;
+        border-radius: 999px;
+        background: var(--accent);
+        opacity: 0;
+        pointer-events: none;
+        transition: left 0.7s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+      }
+
+      .traveler.on {
+        opacity: 1;
+      }
+
+      .cycle-note {
+        margin: 1.75rem 0 0;
+        color: var(--muted);
+        font-size: 1rem;
+        max-width: 48ch;
+      }
+
+      .cycle-note strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      /* —— Roles —— */
+      .roles {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 2rem 3rem;
+      }
+
+      .role {
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 0.5s ease, transform 0.5s ease;
+      }
+
+      .role.visible {
+        opacity: 1;
+        transform: none;
+      }
+
+      .role-num {
+        font: 700 12px/1 var(--font-display);
+        letter-spacing: 0.1em;
+        color: var(--accent);
+        margin-bottom: 0.4rem;
+      }
+
+      .role h3 {
+        font: 700 1.2rem/1.2 var(--font-display);
+        margin: 0 0 0.35rem;
+      }
+
+      .role p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+        max-width: 28ch;
+      }
+
+      /* —— Scenario —— */
+      .scenario {
+        background: var(--bg-mid);
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        max-width: none;
+      }
+
+      .scenario-inner {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      .steps {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        counter-reset: step;
+      }
+
+      .steps li {
+        counter-increment: step;
+        display: grid;
+        grid-template-columns: 3rem 1fr;
+        gap: 1rem;
+        align-items: start;
+        padding: 1.15rem 0;
+        border-top: 1px solid var(--line);
+        opacity: 0;
+        transform: translateX(-8px);
+        transition: opacity 0.45s ease, transform 0.45s ease;
+      }
+
+      .steps li.visible {
+        opacity: 1;
+        transform: none;
+      }
+
+      .steps li::before {
+        content: counter(step, decimal-leading-zero);
+        font: 700 1rem/1.4 var(--font-display);
+        color: var(--accent);
+      }
+
+      .steps strong {
+        display: block;
+        font: 700 1.05rem/1.3 var(--font-display);
+        margin-bottom: 0.2rem;
+      }
+
+      .steps span {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      /* —— Close —— */
+      .close {
+        text-align: left;
+        padding-bottom: clamp(80px, 14vh, 140px);
+      }
+
+      .close h2 {
+        max-width: 18ch;
+      }
+
+      .close p {
+        color: var(--muted);
+        max-width: 40ch;
+        margin: 0 0 1.75rem;
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 1.25rem clamp(24px, 4vw, 48px) 2rem;
+        color: var(--muted);
+        font-size: 0.85rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.5rem;
+        justify-content: space-between;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      @media (max-width: 820px) {
+        .board {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .traveler {
+          display: none;
+        }
+
+        .hero-board {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 560px) {
+        .board,
+        .roles {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-board {
+          opacity: 0.12;
+        }
+
+        .brand {
+          max-width: none;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .col,
+        .role,
+        .steps li,
+        .traveler,
+        .btn {
+          transition: none !important;
+        }
+
+        html {
+          scroll-behavior: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero-bg" aria-hidden="true"></div>
+      <div class="hero-board" aria-hidden="true">
+        <div class="hero-col">
+          <span>Inbox</span>
+          <div class="ghost-card"></div>
+          <div class="ghost-card tall"></div>
+        </div>
+        <div class="hero-col">
+          <span>В работе</span>
+          <div class="ghost-card tall"></div>
+          <div class="ghost-card"></div>
+        </div>
+        <div class="hero-col">
+          <span>Ревью</span>
+          <div class="ghost-card"></div>
+        </div>
+        <div class="hero-col">
+          <span>Готово</span>
+          <div class="ghost-card"></div>
+          <div class="ghost-card tall"></div>
+        </div>
+      </div>
+
+      <p class="brand">Win Predict <em>HQ</em></p>
+      <h1>От цели до релиза — одним жестом на доске</h1>
+      <p class="hero-lead">
+        Команда ставит цель. Штаб режет работу, ведёт исполнение и ревью, а в прод
+        отпускает по вашей команде.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#cycle">Как устроен цикл</a>
+        <a class="btn btn-ghost" href="#close">Что вы контролируете →</a>
+      </div>
+    </header>
+
+    <section class="cycle" id="cycle">
+      <div class="cycle-inner">
+        <p class="section-label">Цикл</p>
+        <h2>Четыре колонки — весь путь цели</h2>
+        <p class="section-lead">
+          Без чатов «кто что делает». Карточка на доске — единый жест управления.
+        </p>
+
+        <div class="board" id="board">
+          <div class="traveler" id="traveler" aria-hidden="true"></div>
+          <article class="col" data-step="0">
+            <div class="col-name">Inbox</div>
+            <h3>Цель сформулирована</h3>
+            <p>Вы описываете, что нужно изменить. Штаб ещё не трогает код.</p>
+          </article>
+          <article class="col" data-step="1">
+            <div class="col-name">В работе</div>
+            <h3>План и исполнение</h3>
+            <p>Цель режется на задачи. Исполнители правят нужные репозитории.</p>
+          </article>
+          <article class="col" data-step="2">
+            <div class="col-name">Ревью</div>
+            <h3>Проверка и приёмка</h3>
+            <p>PR проходят проверку. Вы смотрите результат и решаете, готов ли релиз.</p>
+          </article>
+          <article class="col" data-step="3">
+            <div class="col-name">Готово</div>
+            <h3>Релиз по вашей фразе</h3>
+            <p>Вы говорите «релизь» — штаб закрывает цикл и уводит карточку в Done.</p>
+          </article>
+        </div>
+        <p class="cycle-note">
+          <strong>Вы двигаете карточку и пишете «релизь».</strong> Остальное — штаб.
+        </p>
+      </div>
+    </section>
+
+    <section id="roles">
+      <p class="section-label">Роли</p>
+      <h2>Кто ведёт работу</h2>
+      <p class="section-lead">Люди принимают решения. Штаб держит ритм между колонками.</p>
+      <div class="roles">
+        <article class="role">
+          <div class="role-num">01</div>
+          <h3>Стратег</h3>
+          <p>Режет цель на понятные задачи по репозиториям.</p>
+        </article>
+        <article class="role">
+          <div class="role-num">02</div>
+          <h3>Исполнители</h3>
+          <p>Правят код там, где нужна работа — UI, данные, приложения.</p>
+        </article>
+        <article class="role">
+          <div class="role-num">03</div>
+          <h3>Ревьюер</h3>
+          <p>Проверяет изменения до приёмки, чтобы в Review попадало готовое.</p>
+        </article>
+        <article class="role">
+          <div class="role-num">04</div>
+          <h3>Вотчер</h3>
+          <p>Следит за доской, подтягивает базу и закрывает релиз по вашей команде.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="scenario" id="scenario">
+      <div class="scenario-inner">
+        <p class="section-label">Сценарий</p>
+        <h2>Как это выглядит на деле</h2>
+        <p class="section-lead">Одна цель — сквозь все колонки до Done.</p>
+        <ol class="steps">
+          <li>
+            <div>
+              <strong>Цель на доске</strong>
+              <span>«Обновить интерфейс и админку под новый сценарий»</span>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Работа по репозиториям</strong>
+              <span>Штаб открывает задачи там, где нужны правки, и ведёт исполнение</span>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Проверка изменений</strong>
+              <span>Вы смотрите результат в Review и решаете, можно ли в прод</span>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>«Релизь»</strong>
+              <span>Карточка уходит в Готово — цикл закрыт</span>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="close" id="close">
+      <p class="section-label">Итог</p>
+      <h2>Контроль релиза остаётся у вас</h2>
+      <p>
+        Прозрачная доска вместо разрозненных чатов. Меньше ручной координации между
+        репозиториями. Решение «отправляем» — всегда человеческое.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#cycle">Ещё раз про цикл</a>
+      </div>
+    </section>
+
+    <footer>
+      <span>Win Predict HQ</span>
+      <span>hq.win-predict-ai.com</span>
+    </footer>
+
+    <script>
+      (function () {
+        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        const io = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting) entry.target.classList.add("visible");
+            });
+          },
+          { threshold: 0.2, rootMargin: "0px 0px -8% 0px" }
+        );
+
+        document.querySelectorAll(".col, .role, .steps li").forEach((el, i) => {
+          el.style.transitionDelay = reduce ? "0ms" : `${(i % 4) * 80}ms`;
+          io.observe(el);
+        });
+
+        if (reduce) return;
+
+        const cols = Array.from(document.querySelectorAll(".col"));
+        const traveler = document.getElementById("traveler");
+        let step = 0;
+
+        function placeTraveler(index) {
+          const col = cols[index];
+          if (!col || !traveler) return;
+          cols.forEach((c) => c.classList.remove("active"));
+          col.classList.add("active");
+          const board = document.getElementById("board");
+          const left = col.offsetLeft - board.offsetLeft;
+          traveler.style.left = `${left}px`;
+          traveler.style.width = `${col.offsetWidth}px`;
+          traveler.classList.add("on");
+        }
+
+        const boardIo = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) return;
+              placeTraveler(0);
+              clearInterval(window.__hqCycle);
+              window.__hqCycle = setInterval(() => {
+                step = (step + 1) % cols.length;
+                placeTraveler(step);
+              }, 2200);
+            });
+          },
+          { threshold: 0.35 }
+        );
+
+        const board = document.getElementById("board");
+        if (board) boardIo.observe(board);
+
+        window.addEventListener("resize", () => placeTraveler(step));
+      })();
+    </script>
+  </body>
+</html>

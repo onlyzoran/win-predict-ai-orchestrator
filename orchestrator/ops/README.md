@@ -51,6 +51,10 @@ journalctl -u board-watch.service -n 50 --no-pager
 
 Инвентарь слота (кто занял машину): `/opt/cursor-workers/data/inventory.json`. Файл появляется на тике вотчера (даже если слот свободен). При смене слота снимок уходит в Telegram (`слот 1/1` / `свободно`).
 
+## HQ (внешний pitch)
+
+Лендинг штаба: [https://hq.win-predict-ai.com](https://hq.win-predict-ai.com) — см. [hq/README.md](hq/README.md). Деплой: `install-hq.sh`.
+
 ## Статус UI
 
 Отдельная страница на том же IP, не внутри Nuxt: [http://202.71.15.138/ops/](http://202.71.15.138/ops/). Слот, текущая задача, последний прогон, карточки In Progress / Review. Опрос каждые 4 с.
