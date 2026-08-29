@@ -59,3 +59,8 @@ Project slug: `win-predict-ai-s-vm-f` · env: `prod` · domain: `https://secrets
 
 After that, old repo secrets `CURSOR_API_KEY`, `GITHUB_PAT` / `ORCHESTRATOR_GITHUB_TOKEN`,
 `TELEGRAM_*` can be removed from GitHub (keep them in Infisical).
+
+## Rotation
+
+Change a secret in Infisical Production → within ~60s the VPS agent rewrites the
+env file and restarts `cursor-worker`. CI picks up the new value on the next workflow run.
