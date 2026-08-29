@@ -8,7 +8,7 @@ body:
       value: |
         Цель живёт только здесь. Карточка Inbox → In Progress (или комментарий `/orchestrate`) — оркестратор создаст child issues
         в `ui` / `icons` / `data` / `app` / `admin` / `ios`. Правки после Review: комментарий в этот issue и карточка снова In Progress.
-        Приёмка: Review → Ready to Release (вотчер смержит и уведёт в Done).
+        Приёмка: комментарий «релизь» / «можно релизить» и карточка Review → In Progress (вотчер смержит и уведёт в Done).
   - type: textarea
     id: outcome
     attributes:

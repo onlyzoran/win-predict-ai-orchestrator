@@ -54,7 +54,7 @@ Goal Issue: заголовок, тело (Результат, Поверхнос
 
 - `cursor-cloud-agents`
 - `ai-win-predict`, `ai-win-predict-icons` (вне MVP)
-- ручной bump версий пакетов в app/admin — после PR библиотеки оркестратор публикует prerelease и сам подтягивает её в feature-PR app/admin того же Goal; после Ready to Release библиотеки заменяет prerelease на стабильную. Стабильный bump-агент добивает consumers после publish с `main`
+- ручной bump версий пакетов в app/admin — после PR библиотеки оркестратор публикует prerelease и сам подтягивает её в feature-PR app/admin того же Goal; после релиза библиотеки (In Progress + «релизь») заменяет prerelease на стабильную. Стабильный bump-агент добивает consumers после publish с `main`
 - sync Vue-иконок в React — вне MVP
 
 Если пакет меняется, в `body` consumer-задачи напиши: prerelease/bump делает оркестратор, этот issue — только интеграция API/экранов.
@@ -64,7 +64,7 @@ Goal Issue: заголовок, тело (Результат, Поверхнос
 Всегда указывай в `human_gates`, если применимо:
 
 - выбор варианта иконки (комментарий на child issue, карточка снова In Progress)
-- приёмка → Ready to Release (релизер: bump версии + CHANGELOG, затем merge; для ios — только merge)
+- приёмка → In Progress + «релизь» / «можно релизить» (релизер: bump версии + CHANGELOG, затем merge; для ios — только merge)
 - приёмка спорного UX
 - приёмка iOS на устройстве / симуляторе (на VPS нет Xcode)
 

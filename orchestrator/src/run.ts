@@ -32,15 +32,18 @@ import {
   setPackageLockRootVersion,
   stripPrerelease,
 } from "./release.js";
+import { isReleaseIntent } from "./release-intent.js";
 import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GOAL_REPO = "onlyzoran/win-predict-ai-orchestrator";
 const PROJECT_ID = "PVT_kwHOAom_KM4BgVLq";
 const STATUS_FIELD_ID = "PVTSSF_lAHOAom_KM4BgVLqzhahv2g";
-const STATUS_NAMES = ["Inbox", "In Progress", "Review", "Ready to Release", "Done"] as const;
+const STATUS_NAMES = ["Inbox", "In Progress", "Review", "Done"] as const;
 type StatusName = (typeof STATUS_NAMES)[number];
-/** Fallback, пока GraphQL не отдал актуальные option id (в т.ч. Ready to Release / Done). */
+/** Legacy-колонка: ещё могут лежать старые карточки, новые не создаём. */
+const LEGACY_READY_TO_RELEASE = "Ready to Release";
+/** Fallback, пока GraphQL не отдал актуальные option id (в т.ч. Done). */
 const STATUS_OPTION_FALLBACK: Partial<Record<StatusName, string>> = {
   Inbox: "f75ad846",
   "In Progress": "47fc9ee4",
@@ -50,7 +53,6 @@ const STATUS_OPTION_COLOR: Record<StatusName, string> = {
   Inbox: "BLUE",
   "In Progress": "YELLOW",
   Review: "PURPLE",
-  "Ready to Release": "GREEN",
   Done: "GREEN",
 };
 let statusOptionCache: Partial<Record<StatusName, string>> | null = null;
@@ -649,7 +651,7 @@ function claimReleasing(
     issueNumber,
     formatDispatchComment(
       { phase: "releasing", ...state, at: new Date().toISOString() },
-      ["", "**Релиз.** Ready to Release: ченджлог → merge → Done. Не дублирую запуск."],
+      ["", "**Релиз.** Ченджлог → merge → Done. Не дублирую запуск."],
     ),
     token,
   );
@@ -702,6 +704,30 @@ function notesForWorker(comments: IssueComment[]): string {
     .filter(Boolean)
     .join("\n\n---\n\n");
 }
+
+/** Review → In Progress + фраза про релиз → релизер, иначе воркер. */
+function shouldReleaseFromBoard(
+  state: DispatchState | undefined,
+  comments: IssueComment[],
+): boolean {
+  if (!isReleaseIntent(notesAfterLastReview(comments))) return false;
+  if (lastReleaseConflictNote(comments)) return false;
+  const phase = state?.phase;
+  if (phase === "review" || phase === "releasing") return true;
+  if (phase === "error") {
+    const lastError = [...comments]
+      .reverse()
+      .find((comment) => parseDispatchState(comment.body)?.phase === "error");
+    // Merge уже был, упал только promote — не крутить полный релиз снова.
+    if (lastError && /promote stable/i.test(lastError.body)) return false;
+    if (isResourceBackoff(state, comments)) return false;
+    return true;
+  }
+  return false;
+}
+
+const ACCEPT_HINT =
+  "Замечания — комментарий в этот issue, карточку верни в In Progress. Ок — комментарий вроде «релизь» / «можно релизить» и снова In Progress.";
 
 function lastReleaseConflictNote(comments: IssueComment[]): string {
   for (const comment of [...comments].reverse()) {
@@ -1372,7 +1398,7 @@ async function maybePromoteGoal(childBody: string, token: string): Promise<void>
     formatDispatchComment(
       { phase: "review", at: new Date().toISOString() },
       [
-        "**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Ок — перенеси в Ready to Release.",
+        "**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Ок — комментарий «релизь» (или «можно релизить») и снова In Progress.",
       ],
     ),
   );
@@ -1420,7 +1446,7 @@ async function settleWithReviewer(
         [
           ctx.source,
           "",
-          "**Нужна приёмка.** PR нет — реши сам. Замечания — комментарий в этот issue, карточку верни в In Progress. Ок — Ready to Release.",
+          `**Нужна приёмка.** PR нет — реши сам. ${ACCEPT_HINT}`,
           prLines,
         ],
       ),
@@ -1502,8 +1528,8 @@ async function settleWithReviewer(
   addToProject(issueUrl, "Review", token);
   const headline =
     review.verdict === "pass"
-      ? "**Нужна приёмка.** Ревьюер пропустил. Замечания — комментарий в этот issue, карточку верни в In Progress. Ок — перенеси в Ready to Release."
-      : "**Нужна приёмка.** Ревьюер заблокировал (нужен человек). Замечания — комментарий в этот issue, карточку верни в In Progress. Ок — Ready to Release.";
+      ? `**Нужна приёмка.** Ревьюер пропустил. ${ACCEPT_HINT}`
+      : `**Нужна приёмка.** Ревьюер заблокировал (нужен человек). ${ACCEPT_HINT}`;
   commentOnIssue(
     repo,
     number,
@@ -1561,7 +1587,7 @@ async function finishNewIconWithoutMachine(
       [
         "Slash `/new-icon` уже открыл PR с вариантами. Это не слот My Machines (`win-predict-vps`).",
         "",
-        "**Нужна приёмка.** Выбери вариант A–D комментарием в PR — дальше choose-or-revise. Канонические имена и README — после выбора. Ок — Ready to Release.",
+        `**Нужна приёмка.** Выбери вариант A–D комментарием в PR — дальше choose-or-revise. Канонические имена и README — после выбора. ${ACCEPT_HINT}`,
         prLines,
       ],
     ),
@@ -2131,7 +2157,7 @@ async function commentDispatch(
             prUrls: notes.flatMap((n) => extractPrUrls(n)),
             at: new Date().toISOString(),
           },
-          ["**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Ок — перенеси в Ready to Release."],
+          ["**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Ок — комментарий «релизь» (или «можно релизить») и снова In Progress."],
         )
       : formatDispatchComment(
           { phase: "working", at: new Date().toISOString() },
@@ -2293,6 +2319,15 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   }
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
+  if (shouldReleaseFromBoard(state, comments)) {
+    if (state?.phase === "releasing" && isActivePhase(state, "releasing")) {
+      console.log(`skip goal #${item.number}: already releasing`);
+      return;
+    }
+    console.log(`goal #${item.number}: release intent → releaser`);
+    await handleGoalRelease(item, token);
+    return;
+  }
   if (state?.phase === "error" && !notesAfterLastPhase(comments, "error")) {
     console.log(`skip goal #${item.number}: error, try catch-up`);
     await catchUpGoalByNumber(item.number, token);
@@ -2337,6 +2372,15 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
   }
   const comments = listIssueComments(item.repo, item.number, token);
   const state = lastDispatchState(comments);
+  if (shouldReleaseFromBoard(state, comments)) {
+    if (state?.phase === "releasing" && isActivePhase(state, "releasing")) {
+      console.log(`skip child ${item.url}: already releasing`);
+      return;
+    }
+    console.log(`child ${item.url}: release intent → releaser`);
+    await handleChildRelease(item, token);
+    return;
+  }
   if (state?.phase === "reviewing" && isActiveReviewing(state)) {
     console.log(`skip child ${item.url}: reviewing`);
     return;
@@ -2721,7 +2765,7 @@ async function bounceReleaseConflict(
     formatDispatchComment(
       { phase: "error", prUrls, at: new Date().toISOString() },
       [
-        "**Релиз: конфликт с main.** Карточка → In Progress. Воркер MODE B: подтяни `main` в ветку PR, разреши конфликты, запушь. После ревьюера снова Review → Ready to Release.",
+        "**Релиз: конфликт с main.** Карточка → In Progress. Воркер MODE B: подтяни `main` в ветку PR, разреши конфликты, запушь. После ревьюера снова Review, затем In Progress + «релизь».",
         ...notes.map((n) => `- ${n}`),
         `- ${message.slice(0, 400)}`,
       ],
@@ -2769,18 +2813,18 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
     return false;
   }
   const prUrls = findPrsForRelease(item.url, state, token);
-  // Уже ловили конфликт, но карточка ещё в Ready to Release — сразу в In Progress.
+  // Уже ловили конфликт, но карточка снова на релизе — сразу в In Progress (MODE B).
   if (lastReleaseConflictNote(comments)) {
     await bounceReleaseConflict(
       item,
       prUrls,
-      ["повторный конфликт в Ready to Release"],
+      ["повторный конфликт при релизе"],
       "Cannot update / merge due to conflicts (см. предыдущий комментарий)",
       token,
     );
     return false;
   }
-  await notifyTelegram(`Доска: Ready to Release ${item.repo} #${item.number}\n${item.url}`);
+  await notifyTelegram(`Доска: релиз ${item.repo} #${item.number}\n${item.url}`);
   claimReleasing(item.repo, item.number, token, { prUrls });
   await sleep(CLAIM_WAIT_MS);
 
@@ -2795,8 +2839,10 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
         item.repo,
         item.number,
         formatDispatchComment(
-          { phase: "review", at: new Date().toISOString() },
-          ["**Релиз не вышел.** Нет открытого PR. Карточка остаётся в Ready to Release — закрой вручную или верни в Review."],
+          { phase: "error", at: new Date().toISOString() },
+          [
+            "**Релиз не вышел.** Нет открытого PR. Карточка в In Progress — закрой вручную, верни в Review или приложи PR (повторю по тому же «релизь»).",
+          ],
         ),
         token,
       );
@@ -2836,7 +2882,7 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
           formatDispatchComment(
             { phase: "error", prUrls, at: new Date().toISOString() },
             [
-              "**Релиз упал.** Карточка в Ready to Release — повторю на следующем тике (CI/сеть), или верни в Review.",
+              "**Релиз упал.** Карточка в In Progress — повторю на следующем тике (CI/сеть), или верни в Review.",
               ...notes.map((n) => `- ${n}`),
             ],
           ),
@@ -2876,7 +2922,7 @@ async function handleChildRelease(item: BoardIssue, token: string): Promise<bool
           formatDispatchComment(
             { phase: "error", prUrls, at: new Date().toISOString() },
             [
-              "**Релиз смержен, но promote stable в app/admin упал.** Поправь и снова Ready to Release, или добей bump вручную.",
+              "**Релиз смержен, но promote stable в app/admin упал.** Добей bump вручную или поправь и снова «релизь» (если ещё есть что мержить).",
               ...notes.map((n) => `- ${n}`),
             ],
           ),
@@ -2912,7 +2958,7 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
     return;
   }
   const plan = extractStoredPlan(comments, item.number);
-  await notifyTelegram(`Доска: Ready to Release Goal #${item.number}\n${item.url}`);
+  await notifyTelegram(`Доска: релиз Goal #${item.number}\n${item.url}`);
   claimReleasing(item.repo, item.number, token);
   await sleep(CLAIM_WAIT_MS);
 
@@ -2955,7 +3001,7 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
       body: fetched.body || "",
       url: child.url,
       labels: fetched.labels.map((label) => label.name),
-      status: card?.status ?? "Ready to Release",
+      status: card?.status ?? "In Progress",
       closed: false,
     };
     const ok = await handleChildRelease(childIssue, token);
@@ -2980,7 +3026,7 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
       formatDispatchComment(
         { phase: "error", at: new Date().toISOString() },
         [
-          "**Релиз Goal неполный.** Часть child ещё открыта — поправь и снова Ready to Release.",
+          "**Релиз Goal неполный.** Часть child ещё открыта — поправь и снова In Progress + «релизь».",
           ...notes.map((n) => `- ${n}`),
         ],
       ),
@@ -3016,19 +3062,21 @@ async function watchBoard(): Promise<void> {
       inProgress: all.filter((item) => item.status === "In Progress" && !item.closed).map(cardFromIssue),
       review: all.filter((item) => item.status === "Review" && !item.closed).map(cardFromIssue),
       readyToRelease: all
-        .filter((item) => item.status === "Ready to Release" && !item.closed)
+        .filter((item) => item.status === LEGACY_READY_TO_RELEASE && !item.closed)
         .map(cardFromIssue),
     };
     writeInventory(inventory);
 
-    const ready = all.filter((item) => item.status === "Ready to Release" && !item.closed);
+    const ready = all.filter((item) => item.status === LEGACY_READY_TO_RELEASE && !item.closed);
     const readyGoals = ready.filter((item) => item.repo === GOAL_REPO && item.labels.includes("goal"));
     const readyChildren = ready.filter((item) => isRepo(item.repo));
-    console.log(
-      `watch: release ${readyGoals.length} goal, ${readyChildren.length} child in Ready to Release`,
-    );
-    for (const item of [...readyChildren, ...readyGoals]) {
-      await handleReadyToRelease(item, token);
+    if (ready.length) {
+      console.log(
+        `watch: legacy release ${readyGoals.length} goal, ${readyChildren.length} child in ${LEGACY_READY_TO_RELEASE}`,
+      );
+      for (const item of [...readyChildren, ...readyGoals]) {
+        await handleReadyToRelease(item, token);
+      }
     }
 
     const items = all.filter((item) => item.status === "In Progress" && !item.closed);

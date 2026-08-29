@@ -17,7 +17,7 @@
 
 Goal Issues — в этом репо. Child issues — в таблице выше.
 
-Контракт цели: [docs/goal-contract.md](docs/goal-contract.md). Новый Goal — шаблон **Goal**. Старт: карточка **Inbox → In Progress** (запасной путь — `/orchestrate`). Правки: комментарий в issue и **Review → In Progress**. Приёмка: **Review → Ready to Release** (вотчер смержит и уведёт в Done).
+Контракт цели: [docs/goal-contract.md](docs/goal-contract.md). Новый Goal — шаблон **Goal**. Старт: карточка **Inbox → In Progress** (запасной путь — `/orchestrate`). Правки: комментарий в issue и **Review → In Progress**. Приёмка: комментарий вроде «релизь» / «можно релизить» и **Review → In Progress** (вотчер смержит и уведёт в Done).
 
 Скелет и Action: [orchestrator/](orchestrator/). Нужны секреты `CURSOR_API_KEY` и `ORCHESTRATOR_GITHUB_TOKEN` (см. [orchestrator/README.md](orchestrator/README.md)).
 
@@ -25,10 +25,10 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 Доска: [win-predict-ai](https://github.com/users/onlyzoran/projects/3) (приватная).
 
-Колонки: **Inbox** → **In Progress** → **Review** → **Ready to Release** → **Done**. Привязана к этому репо и шести рабочим.
+Колонки: **Inbox** → **In Progress** → **Review** → **Done**. Привязана к этому репо и шести рабочим.
 
 ## Статус
 
-Таймер `board-watch` на VPS раз в 2 мин видит карточки **In Progress** и будит оркестратор (Goal) или воркера (child — в т.ч. ручной issue в рабочем репо без Goal). После PR local-ревьюер либо оставляет child в In Progress (правки), либо двигает в **Review**. Замечания пиши в issue и верни карточку в In Progress. Когда ок — перенеси в **Ready to Release**: вотчер поднимет версию, обновит ченджлог, смержит PR и поставит **Done**.
+Таймер `board-watch` на VPS раз в 2 мин видит карточки **In Progress** и будит оркестратор (Goal) или воркера (child — в т.ч. ручной issue в рабочем репо без Goal). После PR local-ревьюер либо оставляет child в In Progress (правки), либо двигает в **Review**. Замечания пиши в issue и верни карточку в In Progress. Когда ок — напиши «релизь» (или «можно релизить» / «отправляем на релиз») и перенеси в **In Progress**: вотчер поднимет версию, обновит ченджлог, смержит PR и поставит **Done**.
 
 После PR в ui/icons оркестратор публикует **prerelease** в GitHub Packages и подтягивает её в feature-PR app/admin того же Goal, чтобы интеграция шла до merge библиотеки.

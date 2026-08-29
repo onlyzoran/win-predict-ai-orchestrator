@@ -1,5 +1,5 @@
 [Unit]
-Description=win-predict board watch (In Progress + Ready to Release)
+Description=win-predict board watch (In Progress)
 After=network-online.target cursor-worker.service
 Wants=network-online.target
 
