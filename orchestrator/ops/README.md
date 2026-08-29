@@ -53,7 +53,7 @@ journalctl -u board-watch.service -n 50 --no-pager
 
 ## HQ (внешний pitch)
 
-Лендинг штаба: [https://hq.win-predict-ai.com](https://hq.win-predict-ai.com) — см. [hq/README.md](hq/README.md). Деплой: `install-hq.sh`.
+Лендинг-схемы штаба (React Flow): [https://hq.win-predict-ai.com](https://hq.win-predict-ai.com) — см. [hq/README.md](hq/README.md). Деплой: `install-hq.sh` (собирает `dist/`).
 
 ## Статус UI
 

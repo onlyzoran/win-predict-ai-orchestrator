@@ -1,26 +1,32 @@
 # Win Predict HQ
 
-Внешний pitch-лендинг: **https://hq.win-predict-ai.com**
+Интерактивные схемы на **React Flow**: https://hq.win-predict-ai.com
 
-Одна страница на русском: цикл Inbox → Done, роли, сценарий. Без ops-деталей.
+Вкладки: цикл цели, роли, релиз. Русский, для внешней презентации.
+
+## Локально
+
+```bash
+cd orchestrator/ops/hq
+npm install
+npm run dev
+```
+
+Сборка: `npm run build` → `dist/`.
 
 ## Деплой (root на VPS)
 
-После того как этот репо на `origin/main` и клон на VPS актуален:
+После `git pull` в клоне оркестратора:
 
 ```bash
-chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/install-hq.sh
 /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/install-hq.sh
 ```
 
-Дальше по выводу скрипта: DNS → `sites-enabled` → `certbot --nginx -d hq.win-predict-ai.com`.
-
-Файлы:
+Скрипт: `npm ci && npm run build`, копирует `dist/` в `/var/www/orchestrator-hq`.  
+Существующий nginx vhost (с TLS) **не перезаписывает**.
 
 | Путь | Назначение |
 |---|---|
-| `ops/hq/index.html` | страница |
-| `ops/hq.nginx.conf.example` | vhost |
-| `/var/www/orchestrator-hq` | копия на VPS |
-
-Обновление после правок HTML: снова `install-hq.sh` или копирование `index.html` в `/var/www/orchestrator-hq/`.
+| `ops/hq/` | Vite + React + `@xyflow/react` |
+| `ops/hq.nginx.conf.example` | vhost (первый деплой) |
+| `/var/www/orchestrator-hq` | статика на VPS |
