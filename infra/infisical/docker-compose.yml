@@ -12,6 +12,7 @@ services:
       - pg_data:/var/lib/postgresql/data
     networks:
       - infisical
+    mem_limit: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -28,6 +29,7 @@ services:
       - redis_data:/data
     networks:
       - infisical
+    mem_limit: 128m
     # No host ports.
 
   backend:
@@ -49,6 +51,7 @@ services:
       - "127.0.0.1:8080:8080"
     networks:
       - infisical
+    mem_limit: 1024m
 
 volumes:
   pg_data:
