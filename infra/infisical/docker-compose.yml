@@ -1,0 +1,59 @@
+# Self-hosted Infisical (Postgres + Redis + app).
+# Deploy on the VPS only after reviewing this file and confirming.
+# Do not publish ports outside localhost — nginx terminates TLS.
+
+services:
+  db:
+    container_name: infisical-db
+    image: postgres:14-alpine
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - infisical
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    # No host ports — only reachable inside the docker network.
+
+  redis:
+    container_name: infisical-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - infisical
+    # No host ports.
+
+  backend:
+    container_name: infisical-backend
+    image: infisical/infisical:latest
+    # Prefer pinning after first successful deploy, e.g. infisical/infisical:v0.xx.x
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    ports:
+      # Host nginx proxies here. Never expose 8080 on the public interface.
+      - "127.0.0.1:8080:8080"
+    networks:
+      - infisical
+
+volumes:
+  pg_data:
+  redis_data:
+
+networks:
+  infisical:
+    driver: bridge
