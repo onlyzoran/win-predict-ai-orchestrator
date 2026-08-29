@@ -150,12 +150,6 @@
           <div id="review" class="list"></div>
         </article>
       </section>
-      <section class="grid" style="grid-template-columns: 1fr">
-        <article class="card">
-          <h2>Доска · Ready to Release</h2>
-          <div id="ready" class="list"></div>
-        </article>
-      </section>
     </div>
     <script>
       const STATUS_RU = {
@@ -249,7 +243,6 @@
         $("last").innerHTML = runView(snapshot.last, "Прогонов ещё не было");
         $("progress").innerHTML = cards(snapshot.board?.inProgress, "Пусто");
         $("review").innerHTML = cards(snapshot.board?.review, "Пусто");
-        $("ready").innerHTML = cards(snapshot.board?.readyToRelease, "Пусто");
         $("clock").textContent = new Date().toLocaleTimeString("ru-RU", { hour12: false });
       };
       const load = async () => {

@@ -12,7 +12,7 @@
 
 ## Board watch
 
-Таймер `board-watch.timer` раз в 2 минуты (после окончания прошлого прогона) смотрит доску: **In Progress** (первый старт или после Review) → оркестратор или воркер; **Ready to Release** → bump версии + ченджлог, merge PR, Done.
+Таймер `board-watch.timer` раз в 2 минуты (после окончания прошлого прогона) смотрит доску **In Progress**: первый старт или правка после Review → оркестратор/воркер; комментарий «релизь» / «можно релизить» после Review → bump версии + ченджлог, merge PR, Done. Старые карточки в legacy-колонке Ready to Release тоже ещё релизятся.
 
 GitHub Actions для опроса доски не используем: короткий schedule там ненадёжен, ручной workflow с ноутбука запускал бы второй вотчер параллельно с таймером. Если VPS молчит — `systemctl start board-watch.service`.
 
@@ -47,13 +47,13 @@ systemctl start board-watch.service
 journalctl -u board-watch.service -n 50 --no-pager
 ```
 
-В логе пустой доски: `watch: 0 goal, 0 child in In Progress`. Карточка в In Progress после Review: `watch: 1 child` (или `1 goal`) и дальше запуск воркера. Карточка в Ready to Release: `watch: release … in Ready to Release`.
+В логе пустой доски: `watch: 0 goal, 0 child in In Progress`. Карточка в In Progress после Review без фразы про релиз: `watch: 1 child` (или `1 goal`) и дальше запуск воркера. С фразой «релизь»: `release intent → releaser`.
 
 Инвентарь слота (кто занял машину): `/opt/cursor-workers/data/inventory.json`. Файл появляется на тике вотчера (даже если слот свободен). При смене слота снимок уходит в Telegram (`слот 1/1` / `свободно`).
 
 ## Статус UI
 
-Отдельная страница на том же IP, не внутри Nuxt: [http://202.71.15.138/ops/](http://202.71.15.138/ops/). Слот, текущая задача, последний прогон, карточки In Progress / Review / Ready to Release. Опрос каждые 4 с.
+Отдельная страница на том же IP, не внутри Nuxt: [http://202.71.15.138/ops/](http://202.71.15.138/ops/). Слот, текущая задача, последний прогон, карточки In Progress / Review. Опрос каждые 4 с.
 
 Один раз от root, после того как этот репо уже на `origin/main`:
 
