@@ -32,14 +32,17 @@ orchestrator/
 
 ## Секреты репо
 
-| Secret | Зачем |
-|---|---|
-| `CURSOR_API_KEY` | персональный user key; менеджер и ревьюер (local) и воркеры (My Machines). Тот же ключ / тот же Cursor-аккаунт, что у `agent worker start` на VPS |
-| `GITHUB_PAT` | PAT: `repo` + `project` + **`read:packages`** (prerelease bump в app/admin из GitHub Packages); в сессии воркера как `$GH_TOKEN` |
-| `TELEGRAM_BOT_TOKEN` | бот для коротких событий (не сырой лог, не каждый тик таймера) |
-| `TELEGRAM_CHAT_ID` | чат, куда писать |
+Боевые секреты оркестратора живут в Infisical (Production). GitHub Actions тянет их через
+[`Infisical/secrets-action`](https://github.com/Infisical/secrets-action) и identity `ci-github-actions`.
 
-`CURSOR_MACHINE_NAME` в Action = `win-predict-vps` (не секрет).
+| Secret (GitHub) | Зачем |
+|---|---|
+| `INFISICAL_CLIENT_ID` | Universal Auth Client ID для `ci-github-actions` |
+| `INFISICAL_CLIENT_SECRET` | Universal Auth Client Secret для `ci-github-actions` |
+
+В Infisical (Production) должны быть: `CURSOR_API_KEY`, `GITHUB_PAT`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+
+`CURSOR_MACHINE_NAME` в Action = `win-predict-vps` (не секрет). `GITHUB_TOKEN` выдаёт сам Actions.
 
 ## My Machines на VPS
 

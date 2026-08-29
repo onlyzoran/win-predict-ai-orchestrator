@@ -41,7 +41,21 @@ grep -E '^[A-Z_]+=' /etc/cursor-worker.env | cut -d= -f1
 # Expect: CURSOR_API_KEY GITHUB_PAT TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID
 ```
 
-## Rotation
+## GitHub Actions
 
-Change a secret in Infisical Production → within ~60s the agent rewrites the
-env file and restarts `cursor-worker`.
+Workflow `.github/workflows/orchestrate.yml` uses `Infisical/secrets-action` with
+identity `ci-github-actions` (Universal Auth).
+
+Add **only** these repository secrets in GitHub
+(Settings → Secrets and variables → Actions) — values from Infisical identity
+credentials, not the app secrets:
+
+| Name | Value |
+|------|--------|
+| `INFISICAL_CLIENT_ID` | Client ID of `ci-github-actions` |
+| `INFISICAL_CLIENT_SECRET` | Client Secret description `github-actions` |
+
+Project slug: `win-predict-ai-s-vm-f` · env: `prod` · domain: `https://secrets.win-predict-ai.com`
+
+After that, old repo secrets `CURSOR_API_KEY`, `GITHUB_PAT` / `ORCHESTRATOR_GITHUB_TOKEN`,
+`TELEGRAM_*` can be removed from GitHub (keep them in Infisical).
