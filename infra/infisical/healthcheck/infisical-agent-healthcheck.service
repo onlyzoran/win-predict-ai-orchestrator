@@ -1,0 +1,7 @@
+[Unit]
+Description=Infisical Agent healthcheck
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/infisical/healthcheck/check-agent.sh

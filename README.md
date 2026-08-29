@@ -19,6 +19,8 @@ Goal Issues — в этом репо. Child issues — в таблице выш�
 
 Контракт цели: [docs/goal-contract.md](docs/goal-contract.md). Новый Goal — шаблон **Goal**. Старт: карточка **Inbox → In Progress** (запасной путь — `/orchestrate`). Правки: комментарий в issue и **Review → In Progress**. Без комментария тот же переход — вотчер подтягивает `main` в PR (при конфликте — воркер MODE B). Приёмка: комментарий вроде «релизь» / «можно релизить» и **Review → In Progress** (вотчер смержит и уведёт в Done).
 
+Секреты: [SECRETS.md](SECRETS.md) (Infisical self-hosted).
+
 Скелет и Action: [orchestrator/](orchestrator/). Секреты приложения — в Infisical; в GitHub Secrets только `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` (см. [orchestrator/README.md](orchestrator/README.md)).
 
 ## Project

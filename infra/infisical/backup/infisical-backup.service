@@ -1,0 +1,10 @@
+[Unit]
+Description=Infisical Postgres backup to S3
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/infisical/backup.env
+ExecStart=/opt/infisical/backup/run-backup.sh
+Nice=10
