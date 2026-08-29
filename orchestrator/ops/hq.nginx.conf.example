@@ -4,8 +4,9 @@
 # then: ln -s ... sites-enabled && nginx -t && systemctl reload nginx
 #
 # DNS: A/AAAA for hq.win-predict-ai.com → this VPS
-# TLS after DNS is live:
+# TLS after HTTP works:
 #   certbot --nginx -d hq.win-predict-ai.com
+# (certbot adds the 443 server block and certificates)
 
 server {
     listen 80;
@@ -15,22 +16,6 @@ server {
     location /.well-known/acme-challenge/ {
         root /var/www/html;
     }
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name hq.win-predict-ai.com;
-
-    # certbot will fill these (or set manually):
-    # ssl_certificate     /etc/letsencrypt/live/hq.win-predict-ai.com/fullchain.pem;
-    # ssl_certificate_key /etc/letsencrypt/live/hq.win-predict-ai.com/privkey.pem;
-    # include /etc/letsencrypt/options-ssl-nginx.conf;
-    # ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
     root /var/www/orchestrator-hq;
     index index.html;
