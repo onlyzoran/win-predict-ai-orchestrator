@@ -1,0 +1,17 @@
+[Unit]
+Description=Infisical Agent (render /etc/cursor-worker.env)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/infisical agent --config /etc/infisical/agent-config.yaml
+Restart=on-failure
+RestartSec=10
+# Keep credentials readable only by root
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

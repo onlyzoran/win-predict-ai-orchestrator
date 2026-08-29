@@ -1,0 +1,32 @@
+# Infisical Agent — render /etc/cursor-worker.env from Production.
+# Install path on VPS: /etc/infisical/agent-config.yaml
+#
+# Before start, write Universal Auth credentials (vps-cursor-worker) to:
+#   /etc/infisical/client-id
+#   /etc/infisical/client-secret
+# (chmod 600, one line each, no quotes). Never commit real values.
+
+infisical:
+  address: "https://secrets.win-predict-ai.com"
+  exit-after-auth: false
+
+auth:
+  type: "universal-auth"
+  config:
+    client-id: "/etc/infisical/client-id"
+    client-secret: "/etc/infisical/client-secret"
+    remove_client_secret_on_read: false
+
+sinks:
+  - type: "file"
+    config:
+      path: "/etc/infisical/access-token"
+
+templates:
+  - source-path: "/etc/infisical/templates/cursor-worker.env.tpl"
+    destination-path: "/etc/cursor-worker.env"
+    config:
+      polling-interval: 60s
+      execute:
+        timeout: 60
+        command: "/etc/infisical/reload-cursor-worker.sh"
