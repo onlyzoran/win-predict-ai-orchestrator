@@ -5,7 +5,7 @@
   "scripts": {
     "orchestrate": "tsx orchestrator/src/run.ts",
     "watch": "tsx orchestrator/src/run.ts watch",
-    "test": "tsx --test orchestrator/src/child-issue.test.ts orchestrator/src/depends.test.ts orchestrator/src/prerelease.test.ts orchestrator/src/preview-url.test.ts orchestrator/src/release.test.ts orchestrator/src/release-intent.test.ts orchestrator/src/wake-child.test.ts"
+    "test": "tsx --test orchestrator/src/child-issue.test.ts orchestrator/src/depends.test.ts orchestrator/src/prerelease.test.ts orchestrator/src/preview-url.test.ts orchestrator/src/release.test.ts orchestrator/src/release-intent.test.ts orchestrator/src/sync-main.test.ts orchestrator/src/wake-child.test.ts"
   },
   "engines": {
     "node": ">=22.13"

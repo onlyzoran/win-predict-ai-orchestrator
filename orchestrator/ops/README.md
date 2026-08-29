@@ -12,7 +12,7 @@
 
 ## Board watch
 
-Таймер `board-watch.timer` раз в 2 минуты (после окончания прошлого прогона) смотрит доску **In Progress**: первый старт или правка после Review → оркестратор/воркер; комментарий «релизь» / «можно релизить» после Review → bump версии + ченджлог, merge PR, Done. Старые карточки в legacy-колонке Ready to Release тоже ещё релизятся.
+Таймер `board-watch.timer` раз в 2 минуты (после окончания прошлого прогона) смотрит доску **In Progress**: первый старт или правка после Review → оркестратор/воркер; Review → In Progress без комментария → sync main (`update-branch`, при конфликте MODE B); комментарий «релизь» / «можно релизить» после Review → bump версии + ченджлог, merge PR, Done. Старые карточки в legacy-колонке Ready to Release тоже ещё релизятся.
 
 GitHub Actions для опроса доски не используем: короткий schedule там ненадёжен, ручной workflow с ноутбука запускал бы второй вотчер параллельно с таймером. Если VPS молчит — `systemctl start board-watch.service`.
 
@@ -47,7 +47,7 @@ systemctl start board-watch.service
 journalctl -u board-watch.service -n 50 --no-pager
 ```
 
-В логе пустой доски: `watch: 0 goal, 0 child in In Progress`. Карточка в In Progress после Review без фразы про релиз: `watch: 1 child` (или `1 goal`) и дальше запуск воркера. С фразой «релизь»: `release intent → releaser`.
+В логе пустой доски: `watch: 0 goal, 0 child in In Progress`. Карточка в In Progress после Review без комментария: `Review→IP без комментария → sync main`. С замечаниями: запуск воркера. С фразой «релизь»: `release intent → releaser`.
 
 Инвентарь слота (кто занял машину): `/opt/cursor-workers/data/inventory.json`. Файл появляется на тике вотчера (даже если слот свободен). При смене слота снимок уходит в Telegram (`слот 1/1` / `свободно`).
 

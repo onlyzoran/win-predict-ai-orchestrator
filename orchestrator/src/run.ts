@@ -33,6 +33,7 @@ import {
   stripPrerelease,
 } from "./release.js";
 import { isReleaseIntent } from "./release-intent.js";
+import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
 import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -2365,6 +2366,86 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   await runGoalFirst(issue, token, false);
 }
 
+async function handleSyncMainFromBoard(item: BoardIssue, token: string): Promise<void> {
+  const comments = listIssueComments(item.repo, item.number, token);
+  const state = lastDispatchState(comments);
+  const prUrls = findPrsForRelease(item.url, state, token);
+  if (!prUrls.length) {
+    addToProject(item.url, "Review", token);
+    commentOnIssue(
+      item.repo,
+      item.number,
+      formatDispatchComment(
+        { phase: "review", at: new Date().toISOString() },
+        [
+          "**Sync main.** Открытого PR нет — вернул в Review. Правки: комментарий + In Progress. Релиз: «релизь» + In Progress.",
+        ],
+      ),
+      token,
+    );
+    await notifyTelegram(`Sync main: нет PR → Review\n${item.url}`);
+    return;
+  }
+
+  const notes: string[] = [];
+  let conflict = false;
+  for (const prUrl of prUrls) {
+    try {
+      const prepared = preparePrForMerge(prUrl, token);
+      if (prepared.notes.length) {
+        notes.push(...prepared.notes.map((n) => `${prUrl}: ${n}`));
+      } else {
+        notes.push(`${prUrl}: ветка актуальна`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      notes.push(`${prUrl}: ${message.slice(0, 300)}`);
+      if (isReleaseConflict(err)) {
+        conflict = true;
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (conflict) {
+    console.log(`child ${item.url}: sync main → конфликт, MODE B`);
+    await notifyTelegram(
+      `Доска: ${item.repo} #${item.number} — sync main, конфликт\n${item.url}`,
+    );
+    claimWorking(item.repo, item.number, token);
+    await sleep(CLAIM_WAIT_MS);
+    const task = taskFromBoardIssue(item);
+    try {
+      await dispatchTask(task, item.url, token, {
+        skipIfOpenPr: false,
+        notes: syncMainWorkerNotes(notes),
+      });
+      await catchUpGoalWorkers(item.body, token);
+      await maybePromoteGoal(item.body, token);
+    } catch (err) {
+      await reportChildFailure(item.url, task.id, err, token);
+    }
+    return;
+  }
+
+  addToProject(item.url, "Review", token);
+  commentOnIssue(
+    item.repo,
+    item.number,
+    formatDispatchComment(
+      { phase: "review", prUrls, at: new Date().toISOString() },
+      [
+        "**Sync main.** Ветка PR актуальна относительно base (или подтянул без конфликта). Карточка снова в Review.",
+        ...notes.map((n) => `- ${n}`),
+        ACCEPT_HINT,
+      ],
+    ),
+    token,
+  );
+  await notifyTelegram(`Sync main: ок → Review\n${item.url}`);
+}
+
 async function handleChildFromBoard(item: BoardIssue, token: string): Promise<void> {
   if (item.closed) {
     console.log(`skip child ${item.url}: closed`);
@@ -2379,6 +2460,18 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
     }
     console.log(`child ${item.url}: release intent → releaser`);
     await handleChildRelease(item, token);
+    return;
+  }
+  const humanNotesAfterReview = notesAfterLastReview(comments);
+  if (
+    shouldSyncMainFromBoard({
+      phase: state?.phase,
+      reviewVerdict: state?.reviewVerdict,
+      humanNotes: humanNotesAfterReview,
+    })
+  ) {
+    console.log(`child ${item.url}: Review→IP без комментария → sync main`);
+    await handleSyncMainFromBoard(item, token);
     return;
   }
   if (state?.phase === "reviewing" && isActiveReviewing(state)) {
