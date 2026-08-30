@@ -1,0 +1,49 @@
+{
+  "win-predict-ai": {
+    "status": "active",
+    "label": "product:win-predict-ai",
+    "surfaces": {
+      "ui": {
+        "repo": "onlyzoran/win-predict-ai-ui",
+        "trigger": "sdk",
+        "description": "shared Vue UI / DESIGN.md / Storybook"
+      },
+      "icons": {
+        "repo": "onlyzoran/win-predict-ai-icons",
+        "trigger": "slash",
+        "command": "/new-icon",
+        "description": "иконки в пакете"
+      },
+      "data": {
+        "repo": "onlyzoran/win-predict-ai-data",
+        "trigger": "sdk",
+        "description": "facts, standings, predictions"
+      },
+      "app": {
+        "repo": "onlyzoran/win-predict-ai",
+        "trigger": "sdk",
+        "description": "Vue app, интеграция пакетов"
+      },
+      "admin": {
+        "repo": "onlyzoran/win-predict-ai-admin",
+        "trigger": "sdk",
+        "description": "админка, турниры, sports API"
+      },
+      "ios": {
+        "repo": "onlyzoran/win-predict-ai-ios",
+        "trigger": "sdk",
+        "description": "нативное iOS (SwiftUI)"
+      }
+    }
+  },
+  "telegram-bots": {
+    "status": "stub",
+    "label": "product:telegram-bots",
+    "surfaces": {}
+  },
+  "games": {
+    "status": "stub",
+    "label": "product:games",
+    "surfaces": {}
+  }
+}

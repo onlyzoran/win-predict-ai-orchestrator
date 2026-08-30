@@ -4,6 +4,7 @@
 
 ```
 orchestrator/
+  products/registry.json     # продукты: active surfaces / stub
   prompts/manager.md
   prompts/worker.md          # исполнитель ui/app/admin/data/ios на My Machines
   prompts/reviewer.md        # local: вердикт по PR до колонки Review
@@ -11,6 +12,7 @@ orchestrator/
   schema/plan.example.json
   schema/review.schema.json
   src/run.ts
+  src/products.ts            # лейбл product:* → registry
   ops/cursor-worker.service  # systemd: My Machines worker
   ops/board-watch.timer      # systemd: In Progress (работа + релиз по фразе)
   prompts/design.md          # вкус и палитра для ui/app/admin

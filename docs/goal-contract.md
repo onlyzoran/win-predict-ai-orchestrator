@@ -1,22 +1,42 @@
 # Контракт Goal Issue
 
-Goal — одна высокоуровневая цель. Живёт только в этом репо. Child issues оркестратор создаёт в рабочих репозиториях.
+Goal — одна высокоуровневая цель **продукта**. Живёт в этом штаб-репо. Child issues оркестратор создаёт в рабочих репозиториях продукта (пока активно — только win-predict-ai).
+
+## Продукты
+
+| Шаблон | Лейбл | Статус |
+|---|---|---|
+| **win-predict-ai** | `product:win-predict-ai` | active — child в ui/icons/data/app/admin/ios |
+| **telegram-bots** | `product:telegram-bots` | stub — Goal на доске, child не создаются |
+| **games** | `product:games` | stub — Goal на доске, child не создаются |
+
+Реестр: [orchestrator/products/registry.json](../orchestrator/products/registry.json). Без лейбла `product:*` оркестратор считает Goal продуктом `win-predict-ai` (старые карточки).
+
+На доске фильтруй по `product:…`. Одна Project на все продукты.
 
 ## Создание
 
-Новый Goal: шаблон **Goal** (`.github/ISSUE_TEMPLATE/goal.yml`).
+Issues → **New issue** → выбери шаблон продукта (blank issue отключён).
 
-Обязательно:
+Не с доски Project → Create new issue: там шаблон не подставляется. Либо:
+
+- `…/issues/new?template=goal-win-predict-ai.yml`
+- `…/issues/new?template=goal-telegram-bots.yml`
+- `…/issues/new?template=goal-games.yml`
+
+Обязательно в форме:
 
 | Поле | Зачем |
 |---|---|
 | Результат | Что должно быть правдой в конце |
 | Критерий готовности | Когда карточку можно двигать в Done |
-| Поверхности | Подсказка, какие репо затронуть |
+| Поверхности | Только у win-predict: подсказка, какие репо затронуть |
 
-Лейбл `goal` ставит шаблон. Лейблы поверхностей (`ui`, `icons`, `data`, `app`, `admin`, `ios`) оркестратор допишет после плана; вручную можно сразу.
+Лейблы `goal` и `product:…` ставит шаблон. Лейблы поверхностей (`ui`, …) оркестратор допишет после плана (win-predict).
 
-Старт: карточка Goal **Inbox → In Progress** (или комментарий `/orchestrate`). Повтор с новыми child issues: `/orchestrate redo`.
+**Stub-продукт** (bots/games): Inbox → In Progress → комментарий `needs_human`, карточка в Review, child нет. Когда появятся репо — допиши registry и повтори.
+
+Старт (active): карточка Goal **Inbox → In Progress** (или комментарий `/orchestrate`). Повтор с новыми child: `/orchestrate redo`.
 
 Правки после Review: комментарий **в issue** (Goal или child) и карточка **Review → In Progress**. Комментарий без смены колонки — только заметка, агент не стартует.
 
@@ -39,6 +59,9 @@ Goal — одна высокоуровневая цель. Живёт тольк
 | Лейбл | Где | Смысл |
 |---|---|---|
 | `goal` | только этот репо | это цель, не child |
+| `product:win-predict-ai` | Goal | продукт win-predict |
+| `product:telegram-bots` | Goal | продукт bots (stub) |
+| `product:games` | Goal | продукт games (stub) |
 | `ui` | Goal и child | `win-predict-ai-ui` |
 | `icons` | Goal и child | `win-predict-ai-icons` |
 | `data` | Goal и child | `win-predict-ai-data` |
@@ -54,10 +77,10 @@ Goal — одна высокоуровневая цель. Живёт тольк
 |---|---|---|
 | Inbox | человек | цель записана, оркестратор ещё не брал |
 | In Progress | человек или оркестратор | человек просит работу (первый раз, правка), sync main (без комментария) или релиз (фраза «релизь» и т.п.); оркестратор/воркер/релизер исполняет |
-| Review | оркестратор | PR прошёл ревьюера (pass/blocked) или ревьюер исчерпал правки. Замечания — в issue + In Progress. Без комментария — sync main. Ок — «релизь» + In Progress |
+| Review | оркестратор | PR прошёл ревьюера (pass/blocked), ревьюер исчерпал правки, или план `needs_human` / stub. Замечания — в issue + In Progress. Без комментария — sync main. Ок — «релизь» + In Progress |
 | Done | оркестратор (после релиза) | PR смержен, критерий готовности выполнен |
 
-Черновики и идеи без шаблона в Project не кладём.
+Черновики без шаблона продукта в Project не кладём.
 
 ## Child issues
 

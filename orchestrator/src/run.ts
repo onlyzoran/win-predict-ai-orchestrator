@@ -12,6 +12,12 @@ import {
 } from "./child-issue.js";
 import { unmetDependencyIds } from "./depends.js";
 import {
+  formatProductContext,
+  getProduct,
+  resolveProductId,
+  stubNeedsHumanPlan,
+} from "./products.js";
+import {
   branchNameForPrerelease,
   bumpPackageOnBranch,
   isLibraryPackageRepo,
@@ -933,6 +939,46 @@ function ensureLabel(repo: string, name: Surface, token: string): void {
       meta.description,
       "--force",
     ],
+    token,
+  );
+}
+
+const PRODUCT_LABEL_META: Record<string, { color: string; description: string }> = {
+  "product:win-predict-ai": { color: "5319e7", description: "продукт win-predict-ai" },
+  "product:telegram-bots": { color: "1d76db", description: "продукт telegram-bots (stub)" },
+  "product:games": { color: "d93f0b", description: "продукт games (stub)" },
+};
+
+function ensureProductLabel(productId: string, token: string): void {
+  const entry = getProduct(productId);
+  const meta = PRODUCT_LABEL_META[entry.label] ?? {
+    color: "ededed",
+    description: `продукт ${productId}`,
+  };
+  gh(
+    [
+      "label",
+      "create",
+      entry.label,
+      "-R",
+      GOAL_REPO,
+      "--color",
+      meta.color,
+      "--description",
+      meta.description,
+      "--force",
+    ],
+    token,
+  );
+}
+
+function ensureGoalProductLabel(issueNumber: number, productId: string, token: string): void {
+  const entry = getProduct(productId);
+  ensureProductLabel(productId, token);
+  const labels = fetchIssue(GOAL_REPO, issueNumber, token).labels.map((l) => l.name);
+  if (labels.includes(entry.label)) return;
+  gh(
+    ["issue", "edit", String(issueNumber), "-R", GOAL_REPO, "--add-label", entry.label],
     token,
   );
 }
@@ -2059,15 +2105,40 @@ async function reportChildFailure(
   }
 }
 
+function postNonReadyPlan(issue: IssueCommentEvent["issue"], plan: Plan, token: string): void {
+  commentOnGoal(
+    issue.number,
+    [
+      PLAN_MARKER,
+      `**Статус:** \`${plan.status}\``,
+      "",
+      plan.summary,
+      "",
+      "```json",
+      JSON.stringify(plan, null, 2),
+      "```",
+    ].join("\n"),
+  );
+  addToProject(issue.html_url, "Review", token);
+}
+
 async function decompose(issue: IssueCommentEvent["issue"], extra = ""): Promise<Plan> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
+
+  const productId = resolveProductId(issue.labels.map((l) => l.name));
+  const product = getProduct(productId);
+  if (product.status === "stub") {
+    return stubNeedsHumanPlan(issue.number, productId) as Plan;
+  }
 
   const manager = readFileSync(join(ROOT, "orchestrator/prompts/manager.md"), "utf8");
   const schema = readFileSync(join(ROOT, "orchestrator/schema/plan.schema.json"), "utf8");
   const labels = issue.labels.map((l) => l.name).join(", ") || "(нет)";
   const prompt = [
     manager,
+    "",
+    formatProductContext(productId),
     "",
     "Схема плана (соблюдай строго):",
     schema,
@@ -2076,6 +2147,7 @@ async function decompose(issue: IssueCommentEvent["issue"], extra = ""): Promise
     `номер: ${issue.number}`,
     `заголовок: ${issue.title}`,
     `лейблы: ${labels}`,
+    `продукт: ${productId}`,
     "тело:",
     issue.body || "(пусто)",
     extra,
@@ -2231,12 +2303,11 @@ function createChildrenFromPlan(plan: Plan, issue: IssueCommentEvent["issue"], t
 }
 
 async function runGoalFirst(issue: IssueCommentEvent["issue"], token: string, redo: boolean): Promise<void> {
+  const productId = resolveProductId(issue.labels.map((l) => l.name));
+  ensureGoalProductLabel(issue.number, productId, token);
   const plan = await decompose(issue);
   if (plan.status !== "ready") {
-    commentOnGoal(
-      issue.number,
-      `${PLAN_MARKER}\n**Статус:** \`${plan.status}\`\n\n${plan.summary}`,
-    );
+    postNonReadyPlan(issue, plan, token);
     await notifyTelegram(`Goal #${issue.number}: ${plan.status}\n${plan.summary}\n${issue.html_url}`);
     return;
   }
@@ -2276,11 +2347,7 @@ async function runGoalRevision(
     plan = stored;
   }
   if (plan.status !== "ready") {
-    commentOnGoal(
-      issue.number,
-      `${PLAN_MARKER}\n**Статус:** \`${plan.status}\`\n\n${plan.summary}`,
-    );
-    addToProject(issue.html_url, "Review", token);
+    postNonReadyPlan(issue, plan, token);
     return;
   }
   const created = createChildrenFromPlan(plan, issue, token);
@@ -2348,7 +2415,20 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
     return;
   }
   const stored = extractStoredPlan(comments, item.number);
+  if (stored && stored.status !== "ready") {
+    console.log(`skip goal #${item.number}: plan status ${stored.status}`);
+    if (item.status === "In Progress") addToProject(item.url, "Review", token);
+    return;
+  }
   const issue = fetchIssue(item.repo, item.number, token);
+  const productId = resolveProductId(issue.labels.map((l) => l.name));
+  if (getProduct(productId).status === "stub" && !stored) {
+    ensureGoalProductLabel(issue.number, productId, token);
+    const plan = stubNeedsHumanPlan(issue.number, productId) as Plan;
+    postNonReadyPlan(issue, plan, token);
+    await notifyTelegram(`Goal #${issue.number}: ${plan.status}\n${plan.summary}\n${issue.html_url}`);
+    return;
+  }
   const why =
     state?.phase === "review"
       ? "правка после Review"
