@@ -5,32 +5,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        Продукт: **win-predict-ai**. Карточка Inbox → In Progress (или `/orchestrate`) — менеджер сам выберет поверхности
-        и создаст крупные child (обычно одно на поверхность) в рабочих репо.
-        Правки после Review: комментарий в этот issue и карточка снова In Progress.
-        Приёмка: «релизь» / «можно релизить» и Review → In Progress.
+        Продукт: **win-predict-ai**. Inbox → In Progress — менеджер сам выберет поверхности и child.
+        Правки: комментарий + Review → In Progress. Приёмка: «релизь» + Review → In Progress.
   - type: textarea
     id: outcome
     attributes:
       label: Результат
-      description: Что должно быть правдой, когда цель закрыта. Один абзац.
-      placeholder: В админке можно задать порядок туров, на фронте он отображается в виджете турнира.
-    validations:
-      required: true
-  - type: textarea
-    id: constraints
-    attributes:
-      label: Ограничения
-      description: Что нельзя трогать, какой стиль, дедлайн, зависимость от человека (выбор иконки, приёмка).
-      placeholder: Не менять семантические токены. Иконку выбираю сам в PR.
-  - type: textarea
-    id: done
-    attributes:
-      label: Критерий готовности
-      description: Проверяемые условия. Без этого оркестратор не знает, когда Goal → Done.
-      placeholder: |
-        - PR в затронутых репо зелёные
-        - Пакеты опубликованы и подтянуты в app/admin, если менялись ui/icons
-        - Коротко видно в UI / админке
+      description: Что должно быть правдой, когда цель закрыта.
     validations:
       required: true

@@ -5,30 +5,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        Продукт: **telegram-bots**. Goal можно завести и вести на доске (фильтр `product:telegram-bots`).
-        Рабочие репозитории ещё **не подключены** — оркестратор **не** создаёт child и отвечает `needs_human`.
-        Когда появятся репо — допишем `orchestrator/products/registry.json`.
+        Продукт: **telegram-bots** (stub). Репо ещё не подключены — оркестратор не создаёт child.
   - type: textarea
     id: outcome
     attributes:
       label: Результат
-      description: Что должно быть правдой, когда цель закрыта. Один абзац.
-      placeholder: Бот отвечает на /start и шлёт сводку раз в день.
-    validations:
-      required: true
-  - type: textarea
-    id: constraints
-    attributes:
-      label: Ограничения
-      description: Стек, хостинг, секреты, что нельзя трогать.
-      placeholder: Только Node; токен в Infisical.
-  - type: textarea
-    id: done
-    attributes:
-      label: Критерий готовности
-      description: Проверяемые условия приёмки.
-      placeholder: |
-        - Бот отвечает в тестовом чате
-        - Деплой описан / зелёный CI
+      description: Что должно быть правдой, когда цель закрыта.
     validations:
       required: true

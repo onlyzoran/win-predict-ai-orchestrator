@@ -5,30 +5,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        Продукт: **games**. Goal можно завести и вести на доске (фильтр `product:games`).
-        Рабочие репозитории ещё **не подключены** — оркестратор **не** создаёт child и отвечает `needs_human`.
-        Когда появятся репо — допишем `orchestrator/products/registry.json`.
+        Продукт: **games** (stub). Репо ещё не подключены — оркестратор не создаёт child.
   - type: textarea
     id: outcome
     attributes:
       label: Результат
-      description: Что должно быть правдой, когда цель закрыта. Один абзац.
-      placeholder: В меню есть уровни 1–3, тап запускает уровень.
-    validations:
-      required: true
-  - type: textarea
-    id: constraints
-    attributes:
-      label: Ограничения
-      description: Платформа, движок, что нельзя трогать, приёмка на устройстве.
-      placeholder: SwiftUI; без сторонних движков; приёмка на симуляторе у человека.
-  - type: textarea
-    id: done
-    attributes:
-      label: Критерий готовности
-      description: Проверяемые условия приёмки.
-      placeholder: |
-        - PR с игровым экраном
-        - Проверено на симуляторе / устройстве
+      description: Что должно быть правдой, когда цель закрыта.
     validations:
       required: true
