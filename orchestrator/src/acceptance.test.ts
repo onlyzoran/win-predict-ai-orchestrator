@@ -8,6 +8,7 @@ import {
 } from "./acceptance.js";
 
 const plan: AcceptancePlan = {
+  goal_number: 31,
   summary: "В header Win Predict AI слово AI выделено градиентом.",
   tasks: [
     {
@@ -38,9 +39,9 @@ describe("formatGoalAcceptanceComment", () => {
     const text = formatGoalAcceptanceComment(plan, prs, "Ок — «релизь».").join("\n");
     assert.match(text, /## PR и demo/);
     assert.match(text, /pull\/47/);
-    assert.match(text, /onlyzoran\.github\.io\/win-predict-ai-ui\/pr-preview\/pr-47/);
+    assert.match(text, /ui-preview\/issue-31/);
     assert.match(text, /pull\/62/);
-    assert.match(text, /202\.71\.15\.138\/win-predict-ai-preview\/pr-62/);
+    assert.match(text, /app-preview\/issue-31/);
     assert.match(text, /## Что проверить/);
     assert.match(text, /BrandTitle рендерит AI/);
     assert.match(text, /AppHeader использует BrandTitle/);

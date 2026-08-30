@@ -1535,7 +1535,7 @@ async function settleWithReviewer(
       /* ignore */
     }
   }
-  const prLines = formatPrLinkLines(prUrls);
+  const prLines = formatPrLinkLines(prUrls, goalNumber);
   const baseState = {
     taskId: task.id,
     agentId: ctx.agentId,
@@ -1666,7 +1666,7 @@ async function finishNewIconWithoutMachine(
   token: string,
   prUrls: string[],
 ): Promise<string> {
-  const prLines = formatPrLinkLines(prUrls);
+  const prLines = formatPrLinkLines(prUrls, goalNumber);
   commentOnGoal(
     goalNumber,
     formatDispatchComment(

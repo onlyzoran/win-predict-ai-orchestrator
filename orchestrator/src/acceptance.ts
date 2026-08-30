@@ -10,6 +10,7 @@ export type AcceptanceTask = {
 };
 
 export type AcceptancePlan = {
+  goal_number: number;
   summary: string;
   human_gates?: string[];
   tasks: AcceptanceTask[];
@@ -49,7 +50,11 @@ export function formatGoalAcceptanceComment(
     const prUrls = prsByTaskId.get(task.id);
     if (!prUrls?.length) continue;
     hasPr = true;
-    lines.push(`### \`${task.id}\` · ${task.repo}`, formatPrLinkLines(prUrls), "");
+    lines.push(
+      `### \`${task.id}\` · ${task.repo}`,
+      formatPrLinkLines(prUrls, plan.goal_number),
+      "",
+    );
   }
   if (!hasPr) lines.push("- (открытых PR не найдено)", "");
 
