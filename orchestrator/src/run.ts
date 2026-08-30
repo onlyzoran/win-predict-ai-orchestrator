@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent, CursorAgentError } from "@cursor/sdk";
-import { matchGoalTaskPrs, parentLine, parseParentGoalNumber, taskMarker } from "./child-issue.js";
+import { bumpMarker, matchGoalBumpPrs, matchGoalTaskPrs, parentLine, parseParentGoalNumber, taskMarker } from "./child-issue.js";
 import { unmetDependencyIds } from "./depends.js";
 import {
   formatProductContext,
@@ -821,6 +821,25 @@ function findOpenPrsForGoalTask(goalNumber: number, taskId: string, repo: string
     url: pr.url,
     headRefName: pr.headRefName,
   }));
+}
+
+function findOpenBumpPrsForGoalTask(goalNumber: number, taskId: string, repo: string, token: string): OpenPr[] {
+  const parent = parentLine(GOAL_REPO, goalNumber);
+  return matchGoalBumpPrs(listRepoPrs(repo, "open", token), parent, taskId).map((pr) => ({
+    url: pr.url,
+    headRefName: pr.headRefName,
+  }));
+}
+
+function findOpenConsumerPrsForGoalTask(
+  goalNumber: number,
+  taskId: string,
+  repo: string,
+  token: string,
+): OpenPr[] {
+  const worker = findOpenPrsForGoalTask(goalNumber, taskId, repo, token);
+  if (worker.length) return worker;
+  return findOpenBumpPrsForGoalTask(goalNumber, taskId, repo, token);
 }
 
 function findMergedPrsForGoalTask(goalNumber: number, taskId: string, repo: string, token: string): OpenPr[] {
@@ -1728,7 +1747,7 @@ async function runMachineWorker(
 
 function consumerPrBody(task: Task, goalNumber: number, packageName: string, version: string): string {
   return [
-    taskMarker(task.id),
+    bumpMarker(task.id),
     parentLine(GOAL_REPO, goalNumber),
     "",
     `Тестовая версия \`${packageName}@${version}\` из библиотеки Goal #${goalNumber}.`,
@@ -1750,7 +1769,7 @@ async function bumpPrereleaseIntoGoalConsumers(
   const consumers = plan.tasks.filter((t) => t.surface === "app" || t.surface === "admin");
   const goalIssue = goalUrl(goalNumber);
   for (const task of consumers) {
-    const open = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token);
+    const open = findOpenConsumerPrsForGoalTask(goalNumber, task.id, task.repo, token);
     const commitMessage = `chore: bump ${packageName} to ${version}`;
     try {
       if (open.length) {
@@ -1877,7 +1896,7 @@ async function promoteStableIntoGoalConsumers(
   const notes: string[] = [];
   const consumers = plan.tasks.filter((t) => t.surface === "app" || t.surface === "admin");
   for (const task of consumers) {
-    const open = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token);
+    const open = findOpenConsumerPrsForGoalTask(goalNumber, task.id, task.repo, token);
     if (!open.length) {
       notes.push(`${task.repo}: открытого PR нет — skip`);
       continue;

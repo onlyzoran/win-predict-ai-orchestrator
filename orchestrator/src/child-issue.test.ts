@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  bumpMarker,
+  isConsumerBumpOnlyPr,
+  matchGoalBumpPrs,
   matchGoalTaskPrs,
   parentLine,
   parseParentGoalNumber,
@@ -19,6 +22,25 @@ test("prMatchesGoalTask: Parent + marker", () => {
     prMatchesGoalTask({ body: "Closes #29", title: "feat" }, parent, "ui-header"),
     false,
   );
+});
+
+test("prMatchesGoalTask: chore bump не считается воркерским PR", () => {
+  const legacyBump = {
+    title: "chore: bump @onlyzoran/win-predict-ai-ui to 0.4.0-pr.47.1c4e8b2",
+    body: `${taskMarker("app-header-ai-accent")}\n${parent}\nОркестратор подтянул prerelease для интеграции до merge библиотеки.`,
+  };
+  assert.equal(isConsumerBumpOnlyPr(legacyBump), true);
+  assert.equal(prMatchesGoalTask(legacyBump, parent, "app-header-ai-accent"), false);
+  assert.equal(matchGoalBumpPrs([legacyBump], parent, "app-header-ai-accent").length, 1);
+});
+
+test("prMatchesGoalTask: bump marker отдельно от task marker", () => {
+  const bump = {
+    title: "chore: bump @onlyzoran/win-predict-ai-ui to 0.4.0-pr.47.1c4e8b2",
+    body: `${bumpMarker("app-header-ai-accent")}\n${parent}\nОркестратор подтянул prerelease для интеграции до merge библиотеки.`,
+  };
+  assert.equal(prMatchesGoalTask(bump, parent, "app-header-ai-accent"), false);
+  assert.equal(matchGoalBumpPrs([bump], parent, "app-header-ai-accent").length, 1);
 });
 
 test("matchGoalTaskPrs не схлопывает задачи одного Goal", () => {
