@@ -5,6 +5,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent, CursorAgentError } from "@cursor/sdk";
 import { bumpMarker, matchGoalBumpPrs, matchGoalTaskPrs, parentLine, parseParentGoalNumber, taskMarker } from "./child-issue.js";
+import {
+  flattenPrUrls,
+  formatGoalAcceptanceComment,
+  type GoalTaskPrs,
+} from "./acceptance.js";
 import { unmetDependencyIds } from "./depends.js";
 import {
   formatProductContext,
@@ -826,6 +831,23 @@ function findOpenBumpPrsForGoalTask(goalNumber: number, taskId: string, repo: st
   }));
 }
 
+function collectOpenPrsForGoal(plan: Plan, token: string): GoalTaskPrs {
+  const map: GoalTaskPrs = new Map();
+  for (const task of plan.tasks) {
+    const seen = new Set<string>();
+    const urls: string[] = [];
+    const add = (url: string) => {
+      if (seen.has(url)) return;
+      seen.add(url);
+      urls.push(url);
+    };
+    for (const pr of findOpenPrsForGoalTask(plan.goal_number, task.id, task.repo, token)) add(pr.url);
+    for (const pr of findOpenBumpPrsForGoalTask(plan.goal_number, task.id, task.repo, token)) add(pr.url);
+    if (urls.length) map.set(task.id, urls);
+  }
+  return map;
+}
+
 function findOpenConsumerPrsForGoalTask(
   goalNumber: number,
   taskId: string,
@@ -1471,16 +1493,18 @@ async function maybePromoteGoal(goalNumber: number, token: string): Promise<void
     if (state.reviewVerdict === "changes") return;
   }
   addToProject(goalUrl(goalNumber), "Review", token);
+  const prsByTask = collectOpenPrsForGoal(plan, token);
+  const allPrUrls = flattenPrUrls(prsByTask);
   commentOnGoal(
     goalNumber,
     formatDispatchComment(
-      { phase: "review", at: new Date().toISOString() },
-      [
-        "**Воркеры.** Нужна приёмка — колонка Review. Замечания в этот issue, карточку верни в In Progress. Ок — комментарий «релизь» (или «можно релизить») и снова In Progress.",
-      ],
+      { phase: "review", at: new Date().toISOString(), prUrls: allPrUrls },
+      formatGoalAcceptanceComment(plan, prsByTask, ACCEPT_HINT),
     ),
   );
-  await notifyTelegram(`Goal #${goalNumber}: Review, нужна приёмка\n${goalUrl(goalNumber)}`);
+  await notifyTelegram(
+    `Goal #${goalNumber}: Review, нужна приёмка\n${goalUrl(goalNumber)}${allPrUrls.length ? `\n${allPrUrls.join("\n")}` : ""}`,
+  );
 }
 
 async function settleWithReviewer(
