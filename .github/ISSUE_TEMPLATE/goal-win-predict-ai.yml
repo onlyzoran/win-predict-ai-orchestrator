@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Продукт: **win-predict-ai**. Inbox → In Progress — менеджер сам выберет поверхности и child.
+        Продукт: **win-predict-ai**. Inbox → In Progress — менеджер сам выберет поверхности и откроет PR.
         Правки: комментарий + Review → In Progress. Приёмка: «релизь» + Review → In Progress.
   - type: textarea
     id: outcome

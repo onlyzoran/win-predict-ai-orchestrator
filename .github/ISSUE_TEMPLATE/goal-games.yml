@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Продукт: **games** (stub). Репо ещё не подключены — оркестратор не создаёт child.
+        Продукт: **games** (stub). Репо ещё не подключены — оркестратор не открывает PR.
   - type: textarea
     id: outcome
     attributes:

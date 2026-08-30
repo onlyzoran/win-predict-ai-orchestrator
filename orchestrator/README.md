@@ -1,6 +1,6 @@
 # Оркестратор
 
-Менеджер читает Goal Issue и возвращает JSON-план. Диспетчер создаёт child issues и запускает воркеров.
+Менеджер читает Goal Issue и возвращает JSON-план. Диспетчер запускает воркеров; PR линкуют Goal (без child issues).
 
 ```
 orchestrator/
@@ -22,15 +22,15 @@ orchestrator/
 
 Комментарий `/orchestrate` на issue в этом репо (штаб = Goal) — запасной старт. Основной жест: карточка на доске.
 
-1. Goal **Inbox → In Progress** (или `/orchestrate`): local-агент на GitHub runner собирает план, child issues, Goal → **In Progress**, воркеры.
+1. Goal **Inbox → In Progress** (или `/orchestrate`): план, воркеры, PR к Goal.
 2. Диспетчер:
-   - `slash` `/new-icon` → комментарий, **ждёт PR**
-   - `ui` / `sdk` → My Machines `win-predict-vps` (`worker.md`)
-3. После PR local-ревьюер (`reviewer.md`): **pass** / **blocked** → child **Review**; **changes** → child остаётся **In Progress**, воркер MODE B (макс. 2 круга, потом blocked). Goal → **Review**, когда все child pass или blocked.
-4. Приёмка: человек пишет «релизь» / «можно релизить» / «отправляем на релиз» и **Review → In Progress**. Вотчер: bump `package.json` + CHANGELOG (если есть) → подтянуть base в PR → `gh pr merge --squash` → **Done**. Конфликт с main → **In Progress** (воркер MODE B). Goal с фразой релиза релизит оставшиеся open child.
-5. **Review → In Progress** без комментария и без фразы про релиз: вотчер подтягивает base в PR; ок → снова **Review**; конфликт → воркер MODE B. Правка: комментарий в **issue** (не в PR) + тот же переход — воркер MODE B. Таймер `board-watch` на `win-predict-vps` (каждые 2 мин). Иконки (`/new-icon`) на VPS не едут: выбор A–D — комментарий в PR. Если VPS молчит — `systemctl start board-watch.service`.
+   - `slash` `/new-icon` → комментарий в icons-репо (не на доске), **ждёт PR**, дописывает Parent + маркер
+   - `sdk` → My Machines `win-predict-vps` (`worker.md`)
+3. После PR local-ревьюер (`reviewer.md`) пишет в **Goal**: **pass** / **blocked**; **changes** → Goal остаётся **In Progress**, воркер MODE B (макс. 2 круга). Goal → **Review**, когда все куски плана готовы.
+4. Приёмка: «релизь» и **Review → In Progress**. Вотчер мержит все open PR плана → **Done**.
+5. **Review → In Progress** без комментария: sync `main` во все PR. Правка: комментарий в **Goal**. Таймер `board-watch` каждые 2 мин.
 
-Если план уже есть, повторный `/orchestrate` только догоняет воркеров (не плодит issues). С нуля: `/orchestrate redo`. Ошибка старта воркера **не** ставит `DISPATCH_MARKER` на Goal — `/orchestrate` или возврат в In Progress можно повторить.
+Если план уже есть, повторный `/orchestrate` догоняет воркеров. С нуля: `/orchestrate redo`.
 
 ## Секреты репо
 

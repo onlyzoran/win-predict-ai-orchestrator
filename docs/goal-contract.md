@@ -1,12 +1,12 @@
 # Контракт Goal Issue
 
-Goal — одна высокоуровневая цель **продукта**. Живёт в этом штаб-репо. Child issues оркестратор создаёт в рабочих репозиториях продукта (пока активно — только win-predict-ai).
+Goal — одна высокоуровневая цель **продукта**. Живёт в этом штаб-репо. На доске одна карточка; оркестратор открывает **несколько PR** в рабочих репо (пока active — win-predict-ai). Child issues не создаются.
 
 ## Продукты
 
 | Шаблон | Лейбл | Статус |
 |---|---|---|
-| **win-predict-ai** | `product:win-predict-ai` | active — child в ui/icons/data/app/admin/ios |
+| **win-predict-ai** | `product:win-predict-ai` | active — PR в ui/icons/data/app/admin/ios |
 | **telegram-bots** | `product:telegram-bots` | stub — Goal на доске, child не создаются |
 | **games** | `product:games` | stub — Goal на доске, child не создаются |
 
@@ -32,11 +32,11 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 
 Лейбл `product:…` ставит шаблон. Любой issue в этом репо — Goal (лейбл `goal` не нужен). Поверхности, ограничения и критерии готовности менеджер выводит сам из Результата.
 
-**Stub-продукт** (bots/games): Inbox → In Progress → комментарий `needs_human`, карточка в Review, child нет. Когда появятся репо — допиши registry и повтори.
+**Stub-продукт** (bots/games): Inbox → In Progress → комментарий `needs_human`, карточка в Review, PR нет.
 
-Старт (active): карточка Goal **Inbox → In Progress** (или комментарий `/orchestrate`). Повтор с новыми child: `/orchestrate redo`.
+Старт (active): карточка Goal **Inbox → In Progress** (или комментарий `/orchestrate`). С нуля: `/orchestrate redo`.
 
-Правки после Review: комментарий **в issue** (Goal или child) и карточка **Review → In Progress**. Комментарий без смены колонки — только заметка, агент не стартует.
+Правки после Review: комментарий **в Goal** и карточка **Review → In Progress**. Комментарий без смены колонки — только заметка, агент не стартует.
 
 **Review → In Progress** без комментария (и без фразы про релиз): вотчер проверяет PR относительно `main` (`update-branch`). Без конфликта — карточка снова в Review; при конфликте — воркер MODE B (влить `main`, разрешить).
 
@@ -59,12 +59,12 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 | `product:win-predict-ai` | Goal (этот репо) | продукт win-predict |
 | `product:telegram-bots` | Goal | продукт bots (stub) |
 | `product:games` | Goal | продукт games (stub) |
-| `ui` | Goal и child | `win-predict-ai-ui` |
-| `icons` | Goal и child | `win-predict-ai-icons` |
-| `data` | Goal и child | `win-predict-ai-data` |
-| `app` | Goal и child | `win-predict-ai` |
-| `admin` | Goal и child | `win-predict-ai-admin` |
-| `ios` | Goal и child | `win-predict-ai-ios` |
+| `ui` | Goal | `win-predict-ai-ui` |
+| `icons` | Goal | `win-predict-ai-icons` |
+| `data` | Goal | `win-predict-ai-data` |
+| `app` | Goal | `win-predict-ai` |
+| `admin` | Goal | `win-predict-ai-admin` |
+| `ios` | Goal | `win-predict-ai-ios` |
 
 ## Колонки Project
 
@@ -79,10 +79,10 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 
 Черновики без шаблона продукта в Project не кладём.
 
-## Child issues
+## PR вместо child issues
 
-Goal — исход и приёмка. Child — **mergeable** кусок в одном рабочем репо (по умолчанию одна поверхность = одно child). Несколько child в одном репо — только если куски независимо релизятся; иначе один PR. Пример «кнопка везде»: Goal + ui → app/admin (после prerelease) → ios при необходимости — не дробить ui на стили/story отдельно.
+Goal — исход и приёмка (одна карточка на доске). Кусок плана — **один PR** в одном рабочем репо. В теле PR: `Parent: onlyzoran/win-predict-ai-orchestrator#N` и `<!-- orchestrator-task:id -->`. **Не** `Closes` на Goal.
 
-Одно child issue — один `id` в плане. Диспетчер не схлопывает задачи в одну карточку. После плана запускает воркера: My Machines `worker.md` (ui/app/admin/data/ios) или slash `/new-icon`. Затем local-ревьюер читает PR и пишет вердикт в **issue**: pass/blocked → Review, changes → снова воркер. Правки человека — issue + колонка In Progress, не комментарий в PR. Закрытый child (смерженный кусок) считается готовым: его не переоткрывают и не блокируют им следующие задачи. После Done зависимости оркестратор сам поднимает следующие child с выполненным `depends_on` (Inbox → In Progress + воркер); в одном репо цепочка ждёт merge, между репо достаточно PR у пакета.
+После плана диспетчер запускает воркера (My Machines `worker.md` или slash `/new-icon`). Ревьюер пишет вердикт в **Goal**: pass/blocked → когда все куски готовы, Goal в Review; changes → Goal остаётся In Progress, MODE B. Правки человека — Goal + In Progress. «релизь» на Goal мержит все открытые PR плана (библиотеки раньше потребителей).
 
 Как режется цель: [orchestrator/prompts/manager.md](../orchestrator/prompts/manager.md). Форма плана: [orchestrator/schema/plan.schema.json](../orchestrator/schema/plan.schema.json).

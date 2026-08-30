@@ -4,12 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent, CursorAgentError } from "@cursor/sdk";
-import {
-  matchExistingChild,
-  parentLine,
-  taskMarker,
-  type ChildIssueRef,
-} from "./child-issue.js";
+import { matchGoalTaskPrs, parentLine, parseParentGoalNumber, taskMarker } from "./child-issue.js";
 import { unmetDependencyIds } from "./depends.js";
 import {
   formatProductContext,
@@ -125,6 +120,7 @@ type DispatchPhase = "working" | "reviewing" | "review" | "releasing" | "error";
 type ReviewVerdict = "pass" | "changes" | "blocked";
 type DispatchState = {
   phase: DispatchPhase;
+  taskId?: string;
   agentId?: string;
   runId?: string;
   prUrls?: string[];
@@ -548,6 +544,23 @@ function lastDispatchState(comments: IssueComment[]): DispatchState | undefined 
   return undefined;
 }
 
+/** Состояние всей Goal (без taskId). Комментарии по кускам плана не считаются. */
+function lastGoalDispatchState(comments: IssueComment[]): DispatchState | undefined {
+  for (const comment of [...comments].reverse()) {
+    const state = parseDispatchState(comment.body);
+    if (state && !state.taskId) return state;
+  }
+  return undefined;
+}
+
+function lastDispatchStateForTask(comments: IssueComment[], taskId: string): DispatchState | undefined {
+  for (const comment of [...comments].reverse()) {
+    const state = parseDispatchState(comment.body);
+    if (state?.taskId === taskId) return state;
+  }
+  return undefined;
+}
+
 function isActiveWorking(state: DispatchState | undefined): boolean {
   return isActivePhase(state, "working");
 }
@@ -786,45 +799,84 @@ function extractStoredPlan(comments: IssueComment[], goalNumber: number): Plan |
   return undefined;
 }
 
-function childAlreadyDispatched(url: string, token: string): boolean {
-  return findOpenPrs(url, token).length > 0;
+function goalUrl(goalNumber: number): string {
+  return `https://github.com/${GOAL_REPO}/issues/${goalNumber}`;
 }
 
-function findOpenPrs(issueUrl: string, token: string): OpenPr[] {
-  const { repo, number } = parseIssueUrl(issueUrl);
+function listRepoPrs(
+  repo: string,
+  state: "open" | "merged",
+  token: string,
+): Array<{ url: string; body: string; title: string; headRefName: string }> {
   const raw = gh(
-    ["pr", "list", "-R", repo, "--state", "open", "--limit", "30", "--json", "url,body,title,headRefName"],
+    ["pr", "list", "-R", repo, "--state", state, "--limit", "30", "--json", "url,body,title,headRefName"],
     token,
   );
-  const items = JSON.parse(raw) as Array<{
-    url: string;
-    body: string;
-    title: string;
-    headRefName: string;
-  }>;
-  const closeRe = new RegExp(`(?:closes|fixes|resolves)\\s+#${number}\\b`, "i");
-  const issueRe = new RegExp(`github\\.com/${repo}/issues/${number}\\b`, "i");
-  return items
-    .filter((pr) => closeRe.test(pr.body || "") || closeRe.test(pr.title || "") || issueRe.test(pr.body || ""))
-    .map((pr) => ({ url: pr.url, headRefName: pr.headRefName }));
+  return JSON.parse(raw) as Array<{ url: string; body: string; title: string; headRefName: string }>;
 }
 
-function findOpenPrsForIssue(issueUrl: string, token: string): string[] {
-  return findOpenPrs(issueUrl, token).map((pr) => pr.url);
+function findOpenPrsForGoalTask(goalNumber: number, taskId: string, repo: string, token: string): OpenPr[] {
+  const parent = parentLine(GOAL_REPO, goalNumber);
+  return matchGoalTaskPrs(listRepoPrs(repo, "open", token), parent, taskId).map((pr) => ({
+    url: pr.url,
+    headRefName: pr.headRefName,
+  }));
 }
 
-async function waitForOpenPr(issueUrl: string, token: string, timeoutMs: number): Promise<string[]> {
+function findMergedPrsForGoalTask(goalNumber: number, taskId: string, repo: string, token: string): OpenPr[] {
+  const parent = parentLine(GOAL_REPO, goalNumber);
+  return matchGoalTaskPrs(listRepoPrs(repo, "merged", token), parent, taskId).map((pr) => ({
+    url: pr.url,
+    headRefName: pr.headRefName,
+  }));
+}
+
+function taskProgress(
+  task: Task,
+  goalNumber: number,
+  token: string,
+): { url: string; closed: boolean } | undefined {
+  const open = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token);
+  if (open.length) return { url: open[0].url, closed: false };
+  const merged = findMergedPrsForGoalTask(goalNumber, task.id, task.repo, token);
+  if (merged.length) return { url: merged[0].url, closed: true };
+  return undefined;
+}
+
+function linkPrToGoal(prUrl: string, goalNumber: number, taskId: string, token: string): void {
+  const { repo, number } = parsePrUrl(prUrl);
+  const view = JSON.parse(
+    gh(["pr", "view", String(number), "-R", repo, "--json", "body"], token),
+  ) as { body: string };
+  const parent = parentLine(GOAL_REPO, goalNumber);
+  const marker = taskMarker(taskId);
+  let body = view.body || "";
+  if (!body.includes(parent)) body = `${parent}\n${body}`;
+  if (!body.includes(marker)) body = `${marker}\n${body}`;
+  if (body === (view.body || "")) return;
+  const dir = mkdtempSync(join(tmpdir(), "orch-"));
+  const file = join(dir, "pr.md");
+  writeFileSync(file, body);
+  gh(["pr", "edit", String(number), "-R", repo, "--body-file", file], token);
+}
+
+async function waitForGoalTaskPr(
+  goalNumber: number,
+  task: Task,
+  token: string,
+  timeoutMs: number,
+): Promise<string[]> {
   const started = Date.now();
   for (;;) {
-    const prs = findOpenPrsForIssue(issueUrl, token);
-    if (prs.length) return prs;
+    const prs = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token);
+    if (prs.length) return prs.map((p) => p.url);
     if (Date.now() - started >= timeoutMs) {
       throw new Error(
-        `slash-воркер не открыл PR за ${Math.round(timeoutMs / 60000)} мин (часто rate limit). Повтор: верни карточку в In Progress.`,
+        `воркер не открыл PR за ${Math.round(timeoutMs / 60000)} мин. Повтор: Goal снова In Progress.`,
       );
     }
     const left = Math.round((timeoutMs - (Date.now() - started)) / 1000);
-    console.log(`wait PR ${issueUrl} (${left}s left)`);
+    console.log(`wait PR Goal #${goalNumber} ${task.id} (${left}s left)`);
     await sleep(SLASH_POLL_MS);
   }
 }
@@ -1172,88 +1224,6 @@ function fetchIssue(repo: string, number: number, token: string): IssueCommentEv
   };
 }
 
-function findExistingChild(task: Task, goalNumber: number, token: string): ChildIssueRef | undefined {
-  const raw = gh(
-    [
-      "issue",
-      "list",
-      "-R",
-      task.repo,
-      "--state",
-      "all",
-      "--limit",
-      "100",
-      "--json",
-      "url,title,body,state",
-    ],
-    token,
-  );
-  const items = JSON.parse(raw) as Array<{
-    url: string;
-    title: string;
-    body: string;
-    state: string;
-  }>;
-  return matchExistingChild(items, task, parentLine(GOAL_REPO, goalNumber));
-}
-
-function resolveChild(
-  task: Task,
-  goalNumber: number,
-  created: Map<string, string>,
-  token: string,
-): ChildIssueRef | undefined {
-  const found = findExistingChild(task, goalNumber, token);
-  if (found) return found;
-  const url = created.get(task.id);
-  return url ? { url, closed: false } : undefined;
-}
-
-function createChildIssue(task: Task, goalNumber: number, created: Map<string, string>, token: string): string {
-  ensureLabel(task.repo, task.surface, token);
-  const existing = findExistingChild(task, goalNumber, token);
-  if (existing) return existing.url;
-  const deps = task.depends_on
-    .map((id) => created.get(id))
-    .filter((url): url is string => Boolean(url));
-  const triggerLine =
-    task.trigger.type === "slash"
-      ? `Воркер: комментарий \`${task.trigger.command}\` от диспетчера.`
-      : `Воркер: My Machines (\`worker.md\`) на \`${MACHINE_NAME}\`.`;
-  const body = [
-    taskMarker(task.id),
-    task.body.trim(),
-    "",
-    triggerLine,
-    `Критерий куска: ${task.done_when}`,
-    deps.length ? `Зависит от: ${deps.join(", ")}` : "",
-    parentLine(GOAL_REPO, goalNumber),
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const dir = mkdtempSync(join(tmpdir(), "orch-"));
-  const file = join(dir, "issue.md");
-  writeFileSync(file, body);
-  const url = gh(
-    [
-      "issue",
-      "create",
-      "-R",
-      task.repo,
-      "--title",
-      task.title,
-      "--body-file",
-      file,
-      "--label",
-      task.surface,
-    ],
-    token,
-  );
-  addToProject(url, "Inbox", token);
-  return url;
-}
-
 function extractPrUrls(text: string): string[] {
   const matches = text.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g);
   return [...new Set(matches ?? [])];
@@ -1285,15 +1255,6 @@ function isNewIconTask(task: Task): task is Task & { trigger: { type: "slash"; c
   return task.trigger.type === "slash" && task.trigger.command === "/new-icon";
 }
 
-function triggerFromBoardIssue(body: string, surface: Surface): Trigger {
-  const slash = body.match(/комментарий `(\/new-icon|\/ui-agent)`/);
-  if (slash?.[1] === "/new-icon" || slash?.[1] === "/ui-agent") {
-    return { type: "slash", command: slash[1] };
-  }
-  if (surface === "icons") return { type: "slash", command: "/new-icon" };
-  return { type: "sdk" };
-}
-
 function isVisualTask(task: Task, notes = ""): boolean {
   return (
     task.surface === "ui" ||
@@ -1301,13 +1262,6 @@ function isVisualTask(task: Task, notes = ""): boolean {
     task.surface === "admin" ||
     /цвет|палитр|theme|токен|dark|light|контраст/i.test(`${task.title}\n${task.body}\n${notes}`)
   );
-}
-
-function parentGoalNumber(body: string): number | undefined {
-  const tagged = body.match(
-    /Parent:\s*(?:https:\/\/github\.com\/)?onlyzoran\/win-predict-ai-orchestrator(?:\/issues\/|#)(\d+)/i,
-  );
-  return tagged ? Number(tagged[1]) : undefined;
 }
 
 function checksFailed(rollup: unknown): boolean {
@@ -1375,7 +1329,7 @@ function validateReview(raw: unknown): Review {
   };
 }
 
-async function runReviewer(task: Task, issueUrl: string, prUrls: string[], token: string, extra = ""): Promise<Review> {
+async function runReviewer(task: Task, goalIssueUrl: string, prUrls: string[], token: string, extra = ""): Promise<Review> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
   const reviewer = readFileSync(join(ROOT, "orchestrator/prompts/reviewer.md"), "utf8");
@@ -1394,7 +1348,8 @@ async function runReviewer(task: Task, issueUrl: string, prUrls: string[], token
     "",
     `Репозиторий: ${task.repo}`,
     `Поверхность: ${task.surface}`,
-    `Child issue: ${issueUrl}`,
+    `Goal: ${goalIssueUrl}`,
+    `task id: ${task.id}`,
     `Заголовок: ${task.title}`,
     `Критерий куска: ${task.done_when}`,
     "",
@@ -1431,39 +1386,48 @@ async function runReviewer(task: Task, issueUrl: string, prUrls: string[], token
   return review;
 }
 
-async function maybePromoteGoal(childBody: string, token: string): Promise<void> {
-  const goalNumber = parentGoalNumber(childBody);
-  if (!goalNumber) return;
+function countReviewChangesForTask(comments: IssueComment[], taskId: string): number {
+  let lastReset = -1;
+  comments.forEach((comment, index) => {
+    const state = parseDispatchState(comment.body);
+    if (state?.taskId !== taskId) return;
+    if (state.reviewVerdict === "pass" || state.reviewVerdict === "blocked") lastReset = index;
+  });
+  return comments.slice(lastReset + 1).filter((comment) => {
+    const state = parseDispatchState(comment.body);
+    return state?.taskId === taskId && state.reviewVerdict === "changes";
+  }).length;
+}
+
+async function maybePromoteGoal(goalNumber: number, token: string): Promise<void> {
   const comments = listIssueComments(GOAL_REPO, goalNumber, token);
-  if (lastDispatchState(comments)?.phase === "review") return;
+  if (lastGoalDispatchState(comments)?.phase === "review") return;
   const plan = extractStoredPlan(comments, goalNumber);
   if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return;
   for (const task of plan.tasks) {
-    const child = findExistingChild(task, plan.goal_number, token);
-    if (!child) return;
-    if (child.closed) continue;
-    const { repo, number } = parseIssueUrl(child.url);
-    const state = lastDispatchState(listIssueComments(repo, number, token));
+    const progress = taskProgress(task, plan.goal_number, token);
+    if (!progress) return;
+    if (progress.closed) continue;
+    const state = lastDispatchStateForTask(comments, task.id);
     if (state?.phase !== "review") return;
     if (state.reviewVerdict === "changes") return;
   }
-  const goalUrl = `https://github.com/${GOAL_REPO}/issues/${goalNumber}`;
-  addToProject(goalUrl, "Review", token);
+  addToProject(goalUrl(goalNumber), "Review", token);
   commentOnGoal(
     goalNumber,
     formatDispatchComment(
       { phase: "review", at: new Date().toISOString() },
       [
-        "**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Ок — комментарий «релизь» (или «можно релизить») и снова In Progress.",
+        "**Воркеры.** Нужна приёмка — колонка Review. Замечания в этот issue, карточку верни в In Progress. Ок — комментарий «релизь» (или «можно релизить») и снова In Progress.",
       ],
     ),
   );
-  await notifyTelegram(`Goal #${goalNumber}: Review, нужна приёмка\n${goalUrl}`);
+  await notifyTelegram(`Goal #${goalNumber}: Review, нужна приёмка\n${goalUrl(goalNumber)}`);
 }
 
 async function settleWithReviewer(
   task: Task,
-  issueUrl: string,
+  goalNumber: number,
   token: string,
   ctx: {
     prUrls: string[];
@@ -1473,19 +1437,18 @@ async function settleWithReviewer(
     headRef?: string;
   },
 ): Promise<string> {
-  const { repo, number } = parseIssueUrl(issueUrl);
-  // Fallback: worker иногда забывает вставить URL PR в финальный summary.
-  // Тогда берём открытые PR по child issue и отдаём ревьюеру их URL.
+  const issueUrl = goalUrl(goalNumber);
   let prUrls = ctx.prUrls;
   if (!prUrls.length) {
     try {
-      prUrls = findOpenPrsForIssue(issueUrl, token);
+      prUrls = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token).map((p) => p.url);
     } catch {
-      /* ignore fallback error */
+      /* ignore */
     }
   }
   const prLines = formatPrLinkLines(prUrls);
   const baseState = {
+    taskId: task.id,
     agentId: ctx.agentId,
     runId: ctx.runId,
     prUrls,
@@ -1493,28 +1456,31 @@ async function settleWithReviewer(
   };
 
   if (!prUrls.length) {
-    addToProject(issueUrl, "Review", token);
-    commentOnIssue(
-      repo,
-      number,
+    commentOnGoal(
+      goalNumber,
       formatDispatchComment(
         { phase: "review", ...baseState, reviewVerdict: "blocked", at: new Date().toISOString() },
         [
+          `\`${task.id}\` · ${task.repo}`,
           ctx.source,
           "",
           `**Нужна приёмка.** PR нет — реши сам. ${ACCEPT_HINT}`,
           prLines,
         ],
       ),
-      token,
     );
-    return `${issueUrl} — review blocked — нет PR`;
+    return `${task.id} — review blocked — нет PR`;
   }
 
-  addToProject(issueUrl, "In Progress", token);
-  claimReviewing(repo, number, token, baseState);
-  const comments = listIssueComments(repo, number, token);
-  const previousChanges = countReviewChanges(comments);
+  commentOnGoal(
+    goalNumber,
+    formatDispatchComment(
+      { phase: "reviewing", ...baseState, at: new Date().toISOString() },
+      ["", `**Ревьюер смотрит** \`${task.id}\`. Не дублирую запуск.`],
+    ),
+  );
+  const comments = listIssueComments(GOAL_REPO, goalNumber, token);
+  const previousChanges = countReviewChangesForTask(comments, task.id);
   const roundCap =
     previousChanges >= REVIEW_MAX_CHANGES
       ? `\nРаунд автоправок исчерпан (${previousChanges}/${REVIEW_MAX_CHANGES}). Не ставь changes — только pass или blocked.`
@@ -1554,9 +1520,8 @@ async function settleWithReviewer(
   const at = new Date().toISOString();
   if (review.verdict === "changes") {
     addToProject(issueUrl, "In Progress", token);
-    commentOnIssue(
-      repo,
-      number,
+    commentOnGoal(
+      goalNumber,
       formatDispatchComment(
         {
           phase: "review",
@@ -1566,101 +1531,86 @@ async function settleWithReviewer(
           at,
         },
         [
+          `\`${task.id}\` · ${task.repo}`,
           ctx.source,
           "",
-          `**Ревьюер: правки** (раунд ${previousChanges + 1}/${REVIEW_MAX_CHANGES}). Карточка In Progress — воркер MODE B на следующем тике.`,
+          `**Ревьюер: правки** (раунд ${previousChanges + 1}/${REVIEW_MAX_CHANGES}). Goal In Progress — воркер MODE B на следующем тике.`,
           prLines,
           "",
           review.summary,
           ...findingLines,
         ],
       ),
-      token,
     );
     await notifyTelegram(`Ревьюер: правки ${task.id}\n${issueUrl}\n${review.summary}`);
-    return `${issueUrl} — review changes — ${prUrls.join(" ")}`;
+    return `${task.id} — review changes — ${prUrls.join(" ")}`;
   }
 
-  addToProject(issueUrl, "Review", token);
-  const headline =
-    review.verdict === "pass"
-      ? `**Нужна приёмка.** Ревьюер пропустил. ${ACCEPT_HINT}`
-      : `**Нужна приёмка.** Ревьюер заблокировал (нужен человек). ${ACCEPT_HINT}`;
-  commentOnIssue(
-    repo,
-    number,
+  commentOnGoal(
+    goalNumber,
     formatDispatchComment(
       { phase: "review", ...baseState, reviewVerdict: review.verdict, reviewRound: previousChanges, at },
-      [ctx.source, "", headline, prLines, "", review.summary, ...findingLines],
+      [
+        `\`${task.id}\` · ${task.repo}`,
+        ctx.source,
+        "",
+        review.verdict === "pass"
+          ? `**Кусок готов к приёмке.** ${ACCEPT_HINT}`
+          : `**Ревьюер заблокировал** (нужен человек). ${ACCEPT_HINT}`,
+        prLines,
+        "",
+        review.summary,
+        ...findingLines,
+      ],
     ),
-    token,
   );
   await notifyTelegram(
     `Ревьюер: ${review.verdict} ${task.id}\n${issueUrl}\n${review.summary}\n${prUrls.join("\n")}`,
   );
-  return `${issueUrl} — review ${review.verdict} — ${prUrls.join(" ")}`;
-}
-
-function taskFromBoardIssue(item: BoardIssue): Task {
-  if (!isRepo(item.repo)) throw new Error(`не рабочий репо: ${item.repo}`);
-  const fromLabel = item.labels.find((name) => isSurface(name));
-  const surface = fromLabel && isSurface(fromLabel) ? fromLabel : REPO_SURFACE[item.repo];
-  const id =
-    item.body.match(/<!-- orchestrator-task:([a-z0-9-]+) -->/)?.[1] ?? `issue-${item.number}`;
-  const doneWhen =
-    item.body.match(/Критерий куска:\s*(.+)/)?.[1]?.trim() ?? "PR готов к merge.";
-  return {
-    id,
-    surface,
-    repo: item.repo,
-    title: item.title,
-    body: item.body,
-    depends_on: [],
-    parallel_group: 1,
-    trigger: triggerFromBoardIssue(item.body, surface),
-    done_when: doneWhen,
-  };
+  await maybePromoteGoal(goalNumber, token);
+  return `${task.id} — review ${review.verdict} — ${prUrls.join(" ")}`;
 }
 
 async function finishNewIconWithoutMachine(
-  issueUrl: string,
+  task: Task,
+  goalNumber: number,
   token: string,
   prUrls: string[],
 ): Promise<string> {
-  const { repo, number } = parseIssueUrl(issueUrl);
-  addToProject(issueUrl, "Review", token);
   const prLines = formatPrLinkLines(prUrls);
-  commentOnIssue(
-    repo,
-    number,
+  commentOnGoal(
+    goalNumber,
     formatDispatchComment(
       {
         phase: "review",
+        taskId: task.id,
         prUrls,
         reviewVerdict: "blocked",
         at: new Date().toISOString(),
       },
       [
+        `\`${task.id}\` · ${task.repo}`,
         "Slash `/new-icon` уже открыл PR с вариантами. Это не слот My Machines (`win-predict-vps`).",
         "",
-        `**Нужна приёмка.** Выбери вариант A–D комментарием в PR — дальше choose-or-revise. Канонические имена и README — после выбора. ${ACCEPT_HINT}`,
+        `**Нужна приёмка.** Выбери вариант A–D комментарием в PR. ${ACCEPT_HINT}`,
         prLines,
       ],
     ),
-    token,
   );
-  await notifyTelegram(`Иконки: выбор в PR, не VPS\n${issueUrl}\n${prUrls.join("\n")}`);
-  return `${issueUrl} — review blocked — ${prUrls.join(" ")}`;
+  await notifyTelegram(`Иконки: выбор в PR, не VPS\n${goalUrl(goalNumber)}\n${prUrls.join("\n")}`);
+  await maybePromoteGoal(goalNumber, token);
+  return `${task.id} — review blocked — ${prUrls.join(" ")}`;
 }
 
 async function runMachineWorker(
   task: Task,
-  issueUrl: string,
+  goalNumber: number,
   token: string,
   notes = "",
 ): Promise<{ runId: string; prUrls: string[]; agentId: string; headRef: string; summary: string }> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
+  const issueUrl = goalUrl(goalNumber);
   addToProject(issueUrl, "In Progress", token);
   const workerModel = "composer-2.5";
   const occupancy: InventoryRun = {
@@ -1679,16 +1629,19 @@ async function runMachineWorker(
   const design = isVisualTask(task, notes)
     ? readFileSync(join(ROOT, "orchestrator/prompts/design.md"), "utf8")
     : "";
-  const { repo } = parseIssueUrl(issueUrl);
-  const openPrs = findOpenPrs(issueUrl, token);
+  const openPrs = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token);
   const mode = openPrs.length ? "B" : "A";
   const headRef = mode === "B" ? openPrs[0].headRefName || "main" : "main";
+  const parent = parentLine(GOAL_REPO, goalNumber);
   const prompt = [
     worker,
     design ? `\n${design}\n` : "",
     "",
     `Репозиторий: ${task.repo}`,
-    `Child issue: ${issueUrl}`,
+    `Goal: ${issueUrl}`,
+    `task id: ${task.id}`,
+    `Parent line (вставь в тело PR): ${parent}`,
+    `Маркер задачи (вставь в тело PR): ${taskMarker(task.id)}`,
     `Заголовок: ${task.title}`,
     `Критерий куска: ${task.done_when}`,
     `Режим: MODE ${mode}`,
@@ -1699,12 +1652,12 @@ async function runMachineWorker(
     task.body,
     "",
     notes
-      ? `Комментарии после последней сдачи (ревьюер и человек):\n${notes}`
-      : "Новых комментариев после сдачи нет — перечитай issue и открытый PR, исправь недочёты.",
+      ? `Комментарии после последней сдачи (ревьюер и человек на Goal):\n${notes}`
+      : "Новых комментариев после сдачи нет — перечитай Goal и открытый PR, исправь недочёты.",
     "",
     mode === "B"
       ? "Это правка существующего PR. Новый PR не открывай. В конце — URL того же PR."
-      : "Сделай задачу в этом репо. В конце — URL PR или причина, почему PR нет.",
+      : "Сделай задачу в этом репо. В конце — URL PR или причина, почему PR нет. Не пиши Closes на Goal.",
   ].join("\n");
 
   const attempts = 4;
@@ -1718,7 +1671,7 @@ async function runMachineWorker(
           model: { id: workerModel },
           cloud: {
             env: { type: "machine", name: MACHINE_NAME },
-            repos: [{ url: `https://github.com/${repo}`, startingRef: headRef }],
+            repos: [{ url: `https://github.com/${task.repo}`, startingRef: headRef }],
             skipReviewerRequest: true,
             envVars: { GH_TOKEN: token },
           },
@@ -1739,6 +1692,13 @@ async function runMachineWorker(
         const summary = (result.result ?? "").trim().slice(0, 1500) || "(нет текста)";
         const prUrls = extractPrUrls(summary);
         if (mode === "B" && !prUrls.length) prUrls.push(openPrs[0].url);
+        for (const url of prUrls) {
+          try {
+            linkPrToGoal(url, goalNumber, task.id, token);
+          } catch (err) {
+            console.warn(`link PR ${url}: ${err instanceof Error ? err.message : err}`);
+          }
+        }
         occupancy.status = "review";
         occupancy.runId = result.id;
         occupancy.prUrls = prUrls;
@@ -1766,30 +1726,31 @@ async function runMachineWorker(
   }
 }
 
-function fetchChildBody(issueUrl: string, token: string): string {
-  const { repo, number } = parseIssueUrl(issueUrl);
-  const issue = fetchIssue(repo, number, token);
-  return issue.body || "";
+function consumerPrBody(task: Task, goalNumber: number, packageName: string, version: string): string {
+  return [
+    taskMarker(task.id),
+    parentLine(GOAL_REPO, goalNumber),
+    "",
+    `Тестовая версия \`${packageName}@${version}\` из библиотеки Goal #${goalNumber}.`,
+    "Оркестратор подтянул prerelease для интеграции до merge библиотеки.",
+  ].join("\n");
 }
 
 async function bumpPrereleaseIntoGoalConsumers(
-  childBody: string,
+  goalNumber: number,
   packageName: string,
   version: string,
   token: string,
 ): Promise<ConsumerBump[]> {
-  const goalNumber = parentGoalNumber(childBody);
-  if (!goalNumber) return [];
   const comments = listIssueComments(GOAL_REPO, goalNumber, token);
   const plan = extractStoredPlan(comments, goalNumber);
   if (!plan || plan.status !== "ready") return [];
 
   const results: ConsumerBump[] = [];
   const consumers = plan.tasks.filter((t) => t.surface === "app" || t.surface === "admin");
+  const goalIssue = goalUrl(goalNumber);
   for (const task of consumers) {
-    const child = findExistingChild(task, goalNumber, token);
-    if (!child || child.closed) continue;
-    const open = findOpenPrs(child.url, token);
+    const open = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token);
     const commitMessage = `chore: bump ${packageName} to ${version}`;
     try {
       if (open.length) {
@@ -1804,7 +1765,7 @@ async function bumpPrereleaseIntoGoalConsumers(
         });
         results.push({
           repo: task.repo,
-          issueUrl: child.url,
+          issueUrl: goalIssue,
           prUrl: open[0].url,
           note: bumped.changed
             ? `обновил ${packageName}@${version} в ${open[0].url}`
@@ -1824,31 +1785,7 @@ async function bumpPrereleaseIntoGoalConsumers(
         commitMessage,
       });
       const title = `chore: bump ${packageName} to ${version}`;
-      const body = [
-        `Refs ${child.url}`,
-        "",
-        `Тестовая версия \`${packageName}@${version}\` из библиотеки Goal #${goalNumber}.`,
-        "Оркестратор подтянул prerelease для интеграции до merge библиотеки.",
-        "",
-        parentLine(GOAL_REPO, goalNumber),
-      ].join("\n");
-      if (!bumped.changed) {
-        const existing = openOrFindBumpPr({
-          repo: task.repo,
-          branch,
-          title,
-          body,
-          token,
-          gh,
-        });
-        results.push({
-          repo: task.repo,
-          issueUrl: child.url,
-          prUrl: existing,
-          note: `уже ${packageName}@${version} — ${existing || branch}`,
-        });
-        continue;
-      }
+      const body = consumerPrBody(task, goalNumber, packageName, version);
       const prUrl = openOrFindBumpPr({
         repo: task.repo,
         branch,
@@ -1859,15 +1796,17 @@ async function bumpPrereleaseIntoGoalConsumers(
       });
       results.push({
         repo: task.repo,
-        issueUrl: child.url,
+        issueUrl: goalIssue,
         prUrl,
-        note: `создал bump PR ${prUrl}`,
+        note: bumped.changed
+          ? `создал bump PR ${prUrl}`
+          : `уже ${packageName}@${version} — ${prUrl || branch}`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       results.push({
         repo: task.repo,
-        issueUrl: child.url,
+        issueUrl: goalIssue,
         prUrl: "",
         note: `ошибка bump ${task.repo}: ${message.slice(0, 240)}`,
       });
@@ -1878,29 +1817,26 @@ async function bumpPrereleaseIntoGoalConsumers(
 
 async function afterLibraryPr(
   task: Task,
-  issueUrl: string,
+  goalNumber: number,
   prUrls: string[],
   token: string,
 ): Promise<string> {
   if (!isLibraryPackageRepo(task.repo) || !prUrls.length) return "";
-  const childBody = fetchChildBody(issueUrl, token);
   try {
     const published = publishLibraryPrerelease(prUrls[0], token, gh);
     const bumps = await bumpPrereleaseIntoGoalConsumers(
-      childBody,
+      goalNumber,
       published.packageName,
       published.version,
       token,
     );
     const bumpLines = bumps.length
       ? bumps.map((b) => `- ${b.note}`)
-      : ["- consumer app/admin в плане Goal нет или child закрыты"];
-    const { repo, number } = parseIssueUrl(issueUrl);
-    commentOnIssue(
-      repo,
-      number,
+      : ["- consumer app/admin в плане Goal нет или PR ещё нет"];
+    commentOnGoal(
+      goalNumber,
       [
-        "**Prerelease.**",
+        `**Prerelease** \`${task.id}\`.`,
         `- пакет: \`${published.packageName}@${published.version}\``,
         `- dist-tag: \`${published.tag}\``,
         `- PR: ${published.prUrl}`,
@@ -1909,37 +1845,31 @@ async function afterLibraryPr(
         "Подтянул в app/admin:",
         ...bumpLines,
       ].join("\n"),
-      token,
     );
     await notifyTelegram(
-      `Prerelease ${published.packageName}@${published.version}\n${issueUrl}\n${bumps.map((b) => b.note).join("\n")}`,
+      `Prerelease ${published.packageName}@${published.version}\n${goalUrl(goalNumber)}\n${bumps.map((b) => b.note).join("\n")}`,
     );
     return `${published.packageName}@${published.version}`;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`prerelease ${task.id}: ${message}`);
-    const { repo, number } = parseIssueUrl(issueUrl);
-    commentOnIssue(
-      repo,
-      number,
-      `**Prerelease не вышел.** ${message.slice(0, 500)}\nПовтор — после следующего пуша в PR библиотеки.`,
-      token,
+    commentOnGoal(
+      goalNumber,
+      `**Prerelease не вышел** (\`${task.id}\`). ${message.slice(0, 500)}\nПовтор — после следующего пуша в PR библиотеки.`,
     );
-    await notifyTelegram(`Prerelease ошибка\n${issueUrl}\n${message.slice(0, 400)}`);
+    await notifyTelegram(`Prerelease ошибка\n${goalUrl(goalNumber)}\n${message.slice(0, 400)}`);
     return "";
   }
 }
 
 async function promoteStableIntoGoalConsumers(
-  childBody: string,
+  goalNumber: number,
   libraryRepo: string,
   stableVersion: string,
   token: string,
 ): Promise<string[]> {
   const packageName = packageNameForLibraryRepo(libraryRepo);
   if (!packageName) return [];
-  const goalNumber = parentGoalNumber(childBody);
-  if (!goalNumber) return [];
   const comments = listIssueComments(GOAL_REPO, goalNumber, token);
   const plan = extractStoredPlan(comments, goalNumber);
   if (!plan || plan.status !== "ready") return [];
@@ -1947,9 +1877,7 @@ async function promoteStableIntoGoalConsumers(
   const notes: string[] = [];
   const consumers = plan.tasks.filter((t) => t.surface === "app" || t.surface === "admin");
   for (const task of consumers) {
-    const child = findExistingChild(task, goalNumber, token);
-    if (!child || child.closed) continue;
-    const open = findOpenPrs(child.url, token);
+    const open = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token);
     if (!open.length) {
       notes.push(`${task.repo}: открытого PR нет — skip`);
       continue;
@@ -1977,48 +1905,90 @@ async function promoteStableIntoGoalConsumers(
   return notes;
 }
 
+function findPrsClosingIssue(issueUrl: string, token: string): OpenPr[] {
+  const { repo, number } = parseIssueUrl(issueUrl);
+  const items = listRepoPrs(repo, "open", token);
+  const closeRe = new RegExp(`(?:closes|fixes|resolves)\\s+#${number}\\b`, "i");
+  const issueRe = new RegExp(`github\\.com/${repo}/issues/${number}\\b`, "i");
+  return items
+    .filter((pr) => closeRe.test(pr.body || "") || closeRe.test(pr.title || "") || issueRe.test(pr.body || ""))
+    .map((pr) => ({ url: pr.url, headRefName: pr.headRefName }));
+}
+
+function createSlashTriggerIssue(task: Task, goalNumber: number, token: string): string {
+  ensureLabel(task.repo, task.surface, token);
+  const body = [
+    taskMarker(task.id),
+    parentLine(GOAL_REPO, goalNumber),
+    "",
+    task.body.trim(),
+    "",
+    `Goal: ${goalUrl(goalNumber)}`,
+    `Критерий куска: ${task.done_when}`,
+  ].join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "orch-"));
+  const file = join(dir, "issue.md");
+  writeFileSync(file, body);
+  return gh(
+    ["issue", "create", "-R", task.repo, "--title", task.title, "--body-file", file, "--label", task.surface],
+    token,
+  );
+}
+
 async function dispatchTask(
   task: Task,
-  issueUrl: string,
+  goalNumber: number,
   token: string,
   opts: { skipIfOpenPr?: boolean; notes?: string } = {},
 ): Promise<string> {
-  const { repo, number } = parseIssueUrl(issueUrl);
   const skipIfOpenPr = opts.skipIfOpenPr !== false;
-  if (skipIfOpenPr && childAlreadyDispatched(issueUrl, token)) {
-    const prs = findOpenPrsForIssue(issueUrl, token);
-    const prNote = prs.length ? ` — ${prs.join(" ")}` : "";
-    return `${issueUrl} — уже запускали${prNote}`;
+  const open = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token);
+  const comments = listIssueComments(GOAL_REPO, goalNumber, token);
+  const taskState = lastDispatchStateForTask(comments, task.id);
+  const needsModeB = taskState?.reviewVerdict === "changes" || Boolean(opts.notes);
+  if (skipIfOpenPr && open.length && !needsModeB) {
+    return `${task.id} — уже запускали — ${open.map((p) => p.url).join(" ")}`;
   }
   if (task.trigger.type === "issue_only") {
-    if (skipIfOpenPr) addToProject(issueUrl, "Inbox", token);
-    return `${issueUrl} — issue_only, воркера нет`;
+    return `${task.id} — issue_only, воркера нет`;
   }
   if (isNewIconTask(task)) {
-    const existing = findOpenPrsForIssue(issueUrl, token);
-    if (existing.length) {
-      await afterLibraryPr(task, issueUrl, existing, token);
-      return finishNewIconWithoutMachine(issueUrl, token, existing);
+    if (open.length) {
+      await afterLibraryPr(task, goalNumber, open.map((p) => p.url), token);
+      return finishNewIconWithoutMachine(task, goalNumber, token, open.map((p) => p.url));
     }
-    addToProject(issueUrl, "In Progress", token);
+    const triggerUrl = createSlashTriggerIssue(task, goalNumber, token);
+    const { repo, number } = parseIssueUrl(triggerUrl);
     commentOnIssue(repo, number, task.trigger.command, token);
-    await notifyTelegram(`Slash ${task.trigger.command}: ждём PR\n${issueUrl}`);
-    const prUrls = await waitForOpenPr(issueUrl, token, SLASH_WAIT_MS);
+    await notifyTelegram(`Slash ${task.trigger.command}: ждём PR\n${triggerUrl}`);
+    const started = Date.now();
+    let prUrls: string[] = [];
+    for (;;) {
+      prUrls = findPrsClosingIssue(triggerUrl, token).map((p) => p.url);
+      if (prUrls.length) break;
+      if (Date.now() - started >= SLASH_WAIT_MS) {
+        throw new Error(
+          `slash-воркер не открыл PR за ${Math.round(SLASH_WAIT_MS / 60000)} мин. Повтор: Goal снова In Progress.`,
+        );
+      }
+      await sleep(SLASH_POLL_MS);
+    }
+    for (const url of prUrls) linkPrToGoal(url, goalNumber, task.id, token);
     await notifyTelegram(`Slash ${task.trigger.command}: PR\n${prUrls.join("\n")}`);
-    await afterLibraryPr(task, issueUrl, prUrls, token);
-    return settleWithReviewer(task, issueUrl, token, {
+    await afterLibraryPr(task, goalNumber, prUrls, token);
+    return settleWithReviewer(task, goalNumber, token, {
       prUrls,
       source: `Slash \`${task.trigger.command}\` открыл PR.`,
     });
   }
   const { runId, prUrls, agentId, headRef, summary } = await runMachineWorker(
     task,
-    issueUrl,
+    goalNumber,
     token,
     opts.notes ?? "",
   );
-  await afterLibraryPr(task, issueUrl, prUrls, token);
-  return settleWithReviewer(task, issueUrl, token, {
+  await afterLibraryPr(task, goalNumber, prUrls, token);
+  return settleWithReviewer(task, goalNumber, token, {
     prUrls,
     agentId,
     runId,
@@ -2029,7 +1999,6 @@ async function dispatchTask(
 
 async function dispatchPlan(
   plan: Plan,
-  created: Map<string, string>,
   token: string,
   opts: { skipIfOpenPr?: boolean; notes?: string } = {},
 ): Promise<string[]> {
@@ -2037,15 +2006,16 @@ async function dispatchPlan(
     (a, b) => a.parallel_group - b.parallel_group || a.id.localeCompare(b.id),
   );
   const notes: string[] = [];
+  const comments = listIssueComments(GOAL_REPO, plan.goal_number, token);
   for (const task of ordered) {
-    const child = resolveChild(task, plan.goal_number, created, token);
-    if (!child) {
-      notes.push(`\`${task.id}\` — нет child issue`);
+    const progress = taskProgress(task, plan.goal_number, token);
+    if (progress?.closed) {
+      notes.push(`\`${task.id}\` — PR смержен ${progress.url}`);
       continue;
     }
-    const url = child.url;
-    if (child.closed) {
-      notes.push(`${url} — уже закрыт`);
+    const reviewing = lastDispatchStateForTask(comments, task.id);
+    if (reviewing?.phase === "reviewing" && isActiveReviewing(reviewing)) {
+      notes.push(`\`${task.id}\` — ревьюер смотрит`);
       continue;
     }
     try {
@@ -2055,54 +2025,51 @@ async function dispatchPlan(
           plan.tasks,
           (id) => {
             const depTask = plan.tasks.find((t) => t.id === id);
-            return depTask ? resolveChild(depTask, plan.goal_number, created, token) : undefined;
+            return depTask ? taskProgress(depTask, plan.goal_number, token) : undefined;
           },
-          (depUrl) => findOpenPrsForIssue(depUrl, token).length > 0,
+          (depUrl) => /\/pull\/\d+/.test(depUrl),
         );
         if (unmet.length) {
-          notes.push(`${url} — жду ${unmet.join(", ")}`);
+          notes.push(`\`${task.id}\` — жду ${unmet.join(", ")}`);
           continue;
         }
       }
-      notes.push(await dispatchTask(task, url, token, opts));
+      notes.push(await dispatchTask(task, plan.goal_number, token, opts));
     } catch (err) {
-      const prs = findOpenPrsForIssue(url, token);
+      const prs = findOpenPrsForGoalTask(plan.goal_number, task.id, task.repo, token).map((p) => p.url);
       if (prs.length && isRetryableWorkerStart(err)) {
-        notes.push(`${url} — квота Cursor, PR на месте ${prs.join(" ")}`);
+        notes.push(`\`${task.id}\` — квота Cursor, PR на месте ${prs.join(" ")}`);
         await notifyTelegram(`Квота Cursor, PR уже есть: ${task.id}\n${prs.join("\n")}`);
         continue;
       }
       const message = err instanceof Error ? err.message : String(err);
-      notes.push(`${url} — ошибка: ${message}`);
-      await reportChildFailure(url, task.id, err, token);
+      notes.push(`\`${task.id}\` — ошибка: ${message}`);
+      await reportTaskFailure(plan.goal_number, task.id, err, token);
     }
   }
   return notes;
 }
 
-async function reportChildFailure(
-  issueUrl: string,
+async function reportTaskFailure(
+  goalNumber: number,
   taskId: string,
   err: unknown,
   token: string,
 ): Promise<void> {
   const message = err instanceof Error ? err.message : String(err);
   console.error(err);
-  await notifyTelegram(`Ошибка воркера: ${taskId}\n${issueUrl}\n${message.slice(0, 500)}`);
+  await notifyTelegram(`Ошибка воркера: ${taskId}\n${goalUrl(goalNumber)}\n${message.slice(0, 500)}`);
   try {
-    const { repo, number } = parseIssueUrl(issueUrl);
-    commentOnIssue(
-      repo,
-      number,
+    commentOnGoal(
+      goalNumber,
       formatDispatchComment(
-        { phase: "error", at: new Date().toISOString() },
+        { phase: "error", taskId, at: new Date().toISOString() },
         [
-          `Не удалось запустить воркера: ${message}`,
+          `Не удалось запустить воркера \`${taskId}\`: ${message}`,
           "",
-          "Повтор: комментарий в issue и карточку верни в In Progress.",
+          "Повтор: комментарий в Goal и карточку верни в In Progress.",
         ],
       ),
-      token,
     );
   } catch {
     /* ignore */
@@ -2182,8 +2149,10 @@ function isIdleDispatchNote(note: string): boolean {
   return (
     note.includes("уже запускали") ||
     note.includes("уже закрыт") ||
+    note.includes("смержен") ||
     note.includes(" — жду ") ||
-    note.includes("жду PR")
+    note.includes("жду PR") ||
+    note.includes("ревьюер смотрит")
   );
 }
 
@@ -2192,75 +2161,58 @@ function isIdleDispatchNote(note: string): boolean {
  * Same-repo chains wait for merge; cross-repo can start on open PR (prerelease).
  */
 async function catchUpGoalByNumber(goalNumber: number, token: string): Promise<void> {
-  const goalUrl = `https://github.com/${GOAL_REPO}/issues/${goalNumber}`;
   const comments = listIssueComments(GOAL_REPO, goalNumber, token);
   const plan = extractStoredPlan(comments, goalNumber);
   if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return;
 
   console.log(`catch-up Goal #${goalNumber}`);
-  const notes = await dispatchPlan(plan, new Map(), token, { skipIfOpenPr: true });
+  const notes = await dispatchPlan(plan, token, { skipIfOpenPr: true });
   const shouldReport = notes.some((n) => !isIdleDispatchNote(n));
   if (!shouldReport) {
     console.log(`catch-up Goal #${goalNumber}: nothing to start`);
     return;
   }
-  if (!(await commentDispatch(goalNumber, goalUrl, notes, token))) process.exitCode = 2;
-  await notifyTelegram(`Goal #${goalNumber}: догонка воркеров\n${goalUrl}`);
-}
-
-async function catchUpGoalWorkers(childBody: string, token: string): Promise<void> {
-  const goalNumber = parentGoalNumber(childBody);
-  if (!goalNumber) return;
-  await catchUpGoalByNumber(goalNumber, token);
+  if (!(await commentDispatch(goalNumber, goalUrl(goalNumber), notes, token))) process.exitCode = 2;
+  await notifyTelegram(`Goal #${goalNumber}: догонка воркеров\n${goalUrl(goalNumber)}`);
 }
 
 async function commentDispatch(
   goalNumber: number,
-  goalUrl: string,
+  goalIssueUrl: string,
   notes: string[],
   token: string,
 ): Promise<boolean> {
-  const failed = notes.some((n) => n.includes("ошибка") || n.includes("нет child"));
+  const failed = notes.some((n) => n.includes("ошибка"));
   const allSkipped = notes.length > 0 && notes.every(isIdleDispatchNote);
-  const machineDone = notes.some((n) => /\/pull\/\d+/.test(n) || n.includes(" — machine ") || n.includes(" — review "));
   const bounced = notes.some((n) => n.includes("review changes"));
   const waiting = notes.some((n) => n.includes("жду PR") || n.includes(" — жду "));
-  const toReview = Boolean(token) && !failed && !allSkipped && machineDone && !bounced && !waiting;
-  if (toReview) addToProject(goalUrl, "Review", token);
+  if (!failed && !allSkipped && !bounced && !waiting) {
+    await maybePromoteGoal(goalNumber, token);
+  }
   const prefix = failed
     ? formatDispatchComment(
         { phase: "error", at: new Date().toISOString() },
         ["**Воркеры (есть ошибки).** Верни карточку в In Progress или `/orchestrate`."],
       )
-    : toReview
-      ? formatDispatchComment(
-          {
-            phase: "review",
-            prUrls: notes.flatMap((n) => extractPrUrls(n)),
-            at: new Date().toISOString(),
-          },
-          ["**Воркеры.** Нужна приёмка — колонка Review. Замечания в Goal или child issue, карточку верни в In Progress. Ок — комментарий «релизь» (или «можно релизить») и снова In Progress."],
-        )
-      : formatDispatchComment(
-          { phase: "working", at: new Date().toISOString() },
-          ["**Воркеры.**"],
-        );
+    : formatDispatchComment(
+        { phase: "working", at: new Date().toISOString() },
+        ["**Воркеры.**"],
+      );
   commentOnGoal(goalNumber, `${prefix}\n\n${notes.map((n) => `- ${n}`).join("\n")}`);
   const digest = notes.map((n) => `- ${n}`).join("\n");
-  if (failed) await notifyTelegram(`Goal #${goalNumber}: ошибки\n${goalUrl}\n${digest}`);
-  else if (toReview) await notifyTelegram(`Goal #${goalNumber}: Review, нужна приёмка\n${goalUrl}\n${digest}`);
-  else if (!allSkipped) await notifyTelegram(`Goal #${goalNumber}: воркеры\n${goalUrl}\n${digest}`);
+  if (failed) await notifyTelegram(`Goal #${goalNumber}: ошибки\n${goalIssueUrl}\n${digest}`);
+  else if (!allSkipped) await notifyTelegram(`Goal #${goalNumber}: воркеры\n${goalIssueUrl}\n${digest}`);
   return !failed && !allSkipped;
 }
 
-function postPlanComment(issue: IssueCommentEvent["issue"], plan: Plan, created: Map<string, string>): void {
+function postPlanComment(issue: IssueCommentEvent["issue"], plan: Plan): void {
   const ordered = [...plan.tasks].sort(
     (a, b) => a.parallel_group - b.parallel_group || a.id.localeCompare(b.id),
   );
   const rows = ordered
     .map((task) => {
       const trigger = task.trigger.type === "slash" ? task.trigger.command : task.trigger.type;
-      return `| \`${task.id}\` | ${task.repo} | ${created.get(task.id)} | ${trigger} |`;
+      return `| \`${task.id}\` | ${task.repo} | ${trigger} |`;
     })
     .join("\n");
   const gates = plan.human_gates?.length
@@ -2272,8 +2224,10 @@ function postPlanComment(issue: IssueCommentEvent["issue"], plan: Plan, created:
       PLAN_MARKER,
       `**План.** ${plan.summary}`,
       "",
-      "| id | repo | issue | trigger |",
-      "|---|---|---|---|",
+      "Одна Goal — несколько PR (без child issues). PR: `Parent` + маркер задачи, без Closes на Goal.",
+      "",
+      "| id | repo | trigger |",
+      "|---|---|---|",
       rows,
       gates,
       "",
@@ -2284,14 +2238,7 @@ function postPlanComment(issue: IssueCommentEvent["issue"], plan: Plan, created:
   );
 }
 
-function createChildrenFromPlan(plan: Plan, issue: IssueCommentEvent["issue"], token: string): Map<string, string> {
-  const created = new Map<string, string>();
-  const ordered = [...plan.tasks].sort(
-    (a, b) => a.parallel_group - b.parallel_group || a.id.localeCompare(b.id),
-  );
-  for (const task of ordered) {
-    created.set(task.id, createChildIssue(task, issue.number, created, token));
-  }
+function publishPlan(plan: Plan, issue: IssueCommentEvent["issue"], token: string): void {
   for (const surface of plan.surfaces) {
     ensureLabel(GOAL_REPO, surface, token);
   }
@@ -2302,8 +2249,7 @@ function createChildrenFromPlan(plan: Plan, issue: IssueCommentEvent["issue"], t
     );
   }
   addToProject(issue.html_url, "In Progress", token);
-  postPlanComment(issue, plan, created);
-  return created;
+  postPlanComment(issue, plan);
 }
 
 async function runGoalFirst(issue: IssueCommentEvent["issue"], token: string, redo: boolean): Promise<void> {
@@ -2315,9 +2261,9 @@ async function runGoalFirst(issue: IssueCommentEvent["issue"], token: string, re
     await notifyTelegram(`Goal #${issue.number}: ${plan.status}\n${plan.summary}\n${issue.html_url}`);
     return;
   }
-  const created = createChildrenFromPlan(plan, issue, token);
+  publishPlan(plan, issue, token);
   await notifyTelegram(`Goal #${issue.number}: план готов, запускаю воркеров\n${plan.summary}\n${issue.html_url}`);
-  const notes = await dispatchPlan(plan, created, token, { skipIfOpenPr: !redo });
+  const notes = await dispatchPlan(plan, token, { skipIfOpenPr: !redo });
   if (!(await commentDispatch(issue.number, issue.html_url, notes, token))) process.exitCode = 2;
 }
 
@@ -2354,19 +2300,8 @@ async function runGoalRevision(
     postNonReadyPlan(issue, plan, token);
     return;
   }
-  const created = createChildrenFromPlan(plan, issue, token);
-  if (humanNotes) {
-    for (const url of created.values()) {
-      const { repo, number } = parseIssueUrl(url);
-      commentOnIssue(
-        repo,
-        number,
-        `Правка с Goal #${issue.number}:\n\n${humanNotes}`,
-        token,
-      );
-    }
-  }
-  const notes = await dispatchPlan(plan, created, token, {
+  publishPlan(plan, issue, token);
+  const notes = await dispatchPlan(plan, token, {
     skipIfOpenPr: false,
     notes: humanNotes,
   });
@@ -2395,7 +2330,7 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
     return;
   }
   const comments = listIssueComments(item.repo, item.number, token);
-  const state = lastDispatchState(comments);
+  const state = lastGoalDispatchState(comments);
   if (shouldReleaseFromBoard(state, comments)) {
     if (state?.phase === "releasing" && isActivePhase(state, "releasing")) {
       console.log(`skip goal #${item.number}: already releasing`);
@@ -2412,10 +2347,6 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   }
   if (isResourceBackoff(state, comments)) {
     console.log(`skip goal #${item.number}: resource_exhausted backoff`);
-    return;
-  }
-  if (isActiveWorking(state) && !notesAfterLastPhase(comments, "working")) {
-    console.log(`skip goal #${item.number}: already working`);
     return;
   }
   const stored = extractStoredPlan(comments, item.number);
@@ -2444,7 +2375,19 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   await sleep(CLAIM_WAIT_MS);
   const fresh = listIssueComments(item.repo, item.number, token);
   const humanNotes = notesAfterLastReview(fresh);
-  if (state?.phase === "review" && stored) {
+  if (
+    stored &&
+    shouldSyncMainFromBoard({
+      phase: state?.phase,
+      reviewVerdict: state?.reviewVerdict,
+      humanNotes,
+    })
+  ) {
+    console.log(`goal #${item.number}: Review→IP без комментария → sync main`);
+    await handleGoalSyncMain(item, stored, token);
+    return;
+  }
+  if (state?.phase === "review" && stored && humanNotes) {
     await runGoalRevision(issue, stored, humanNotes, token);
     return;
   }
@@ -2455,14 +2398,14 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   await runGoalFirst(issue, token, false);
 }
 
-async function handleSyncMainFromBoard(item: BoardIssue, token: string): Promise<void> {
-  const comments = listIssueComments(item.repo, item.number, token);
-  const state = lastDispatchState(comments);
-  const prUrls = findPrsForRelease(item.url, state, token);
+async function handleGoalSyncMain(item: BoardIssue, plan: Plan, token: string): Promise<void> {
+  const prUrls: string[] = [];
+  for (const task of plan.tasks) {
+    prUrls.push(...findOpenPrsForGoalTask(plan.goal_number, task.id, task.repo, token).map((p) => p.url));
+  }
   if (!prUrls.length) {
     addToProject(item.url, "Review", token);
-    commentOnIssue(
-      item.repo,
+    commentOnGoal(
       item.number,
       formatDispatchComment(
         { phase: "review", at: new Date().toISOString() },
@@ -2470,7 +2413,6 @@ async function handleSyncMainFromBoard(item: BoardIssue, token: string): Promise
           "**Sync main.** Открытого PR нет — вернул в Review. Правки: комментарий + In Progress. Релиз: «релизь» + In Progress.",
         ],
       ),
-      token,
     );
     await notifyTelegram(`Sync main: нет PR → Review\n${item.url}`);
     return;
@@ -2481,11 +2423,8 @@ async function handleSyncMainFromBoard(item: BoardIssue, token: string): Promise
   for (const prUrl of prUrls) {
     try {
       const prepared = preparePrForMerge(prUrl, token);
-      if (prepared.notes.length) {
-        notes.push(...prepared.notes.map((n) => `${prUrl}: ${n}`));
-      } else {
-        notes.push(`${prUrl}: ветка актуальна`);
-      }
+      if (prepared.notes.length) notes.push(...prepared.notes.map((n) => `${prUrl}: ${n}`));
+      else notes.push(`${prUrl}: ветка актуальна`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       notes.push(`${prUrl}: ${message.slice(0, 300)}`);
@@ -2498,94 +2437,28 @@ async function handleSyncMainFromBoard(item: BoardIssue, token: string): Promise
   }
 
   if (conflict) {
-    console.log(`child ${item.url}: sync main → конфликт, MODE B`);
-    await notifyTelegram(
-      `Доска: ${item.repo} #${item.number} — sync main, конфликт\n${item.url}`,
-    );
-    claimWorking(item.repo, item.number, token);
-    await sleep(CLAIM_WAIT_MS);
-    const task = taskFromBoardIssue(item);
-    try {
-      await dispatchTask(task, item.url, token, {
-        skipIfOpenPr: false,
-        notes: syncMainWorkerNotes(notes),
-      });
-      await catchUpGoalWorkers(item.body, token);
-      await maybePromoteGoal(item.body, token);
-    } catch (err) {
-      await reportChildFailure(item.url, task.id, err, token);
-    }
+    console.log(`goal #${item.number}: sync main → конфликт, MODE B`);
+    const dispatchNotes = await dispatchPlan(plan, token, {
+      skipIfOpenPr: false,
+      notes: syncMainWorkerNotes(notes),
+    });
+    if (!(await commentDispatch(item.number, item.url, dispatchNotes, token))) process.exitCode = 2;
     return;
   }
 
   addToProject(item.url, "Review", token);
-  commentOnIssue(
-    item.repo,
+  commentOnGoal(
     item.number,
     formatDispatchComment(
       { phase: "review", prUrls, at: new Date().toISOString() },
       [
-        "**Sync main.** Ветка PR актуальна относительно base (или подтянул без конфликта). Карточка снова в Review.",
+        "**Sync main.** Ветки PR актуальны относительно base (или подтянул без конфликта). Карточка снова в Review.",
         ...notes.map((n) => `- ${n}`),
         ACCEPT_HINT,
       ],
     ),
-    token,
   );
   await notifyTelegram(`Sync main: ок → Review\n${item.url}`);
-}
-
-async function handleChildFromBoard(item: BoardIssue, token: string): Promise<void> {
-  if (item.closed) {
-    console.log(`skip child ${item.url}: closed`);
-    return;
-  }
-  const comments = listIssueComments(item.repo, item.number, token);
-  const state = lastDispatchState(comments);
-  if (shouldReleaseFromBoard(state, comments)) {
-    if (state?.phase === "releasing" && isActivePhase(state, "releasing")) {
-      console.log(`skip child ${item.url}: already releasing`);
-      return;
-    }
-    console.log(`child ${item.url}: release intent → releaser`);
-    await handleChildRelease(item, token);
-    return;
-  }
-  const humanNotesAfterReview = notesAfterLastReview(comments);
-  if (
-    shouldSyncMainFromBoard({
-      phase: state?.phase,
-      reviewVerdict: state?.reviewVerdict,
-      humanNotes: humanNotesAfterReview,
-    })
-  ) {
-    console.log(`child ${item.url}: Review→IP без комментария → sync main`);
-    await handleSyncMainFromBoard(item, token);
-    return;
-  }
-  if (state?.phase === "reviewing" && isActiveReviewing(state)) {
-    console.log(`skip child ${item.url}: reviewing`);
-    return;
-  }
-  if (!shouldWakeChild(state, comments, item.url)) {
-    console.log(`skip child ${item.url}: phase=${state?.phase ?? "none"}`);
-    return;
-  }
-  await notifyTelegram(
-    `Доска: ${item.repo} #${item.number} — ${childWakeReason(state, comments)}\n${item.url}`,
-  );
-  claimWorking(item.repo, item.number, token);
-  await sleep(CLAIM_WAIT_MS);
-  const fresh = listIssueComments(item.repo, item.number, token);
-  const humanNotes = notesForWorker(fresh);
-  const task = taskFromBoardIssue(item);
-  try {
-    await dispatchTask(task, item.url, token, { skipIfOpenPr: false, notes: humanNotes });
-    await catchUpGoalWorkers(item.body, token);
-    await maybePromoteGoal(item.body, token);
-  } catch (err) {
-    await reportChildFailure(item.url, task.id, err, token);
-  }
 }
 
 function cardFromIssue(item: BoardIssue): InventoryCard {
@@ -2933,208 +2806,9 @@ function mergePullRequest(prUrl: string, token: string): string {
   return `${prepNote}${prepared.pr.url} смержен (squash)`;
 }
 
-async function bounceReleaseConflict(
-  item: BoardIssue,
-  prUrls: string[],
-  notes: string[],
-  message: string,
-  token: string,
-): Promise<void> {
-  addToProject(item.url, "In Progress", token);
-  commentOnIssue(
-    item.repo,
-    item.number,
-    formatDispatchComment(
-      { phase: "error", prUrls, at: new Date().toISOString() },
-      [
-        "**Релиз: конфликт с main.** Карточка → In Progress. Воркер MODE B: подтяни `main` в ветку PR, разреши конфликты, запушь. После ревьюера снова Review, затем In Progress + «релизь».",
-        ...notes.map((n) => `- ${n}`),
-        `- ${message.slice(0, 400)}`,
-      ],
-    ),
-    token,
-  );
-  await notifyTelegram(`Релиз: конфликт → In Progress\n${item.url}\n${message.slice(0, 400)}`);
-}
-
-function findPrsForRelease(issueUrl: string, state: DispatchState | undefined, token: string): string[] {
-  const open = findOpenPrsForIssue(issueUrl, token);
-  if (open.length) return open;
-  const remembered = (state?.prUrls ?? []).filter((url) => /\/pull\/\d+/.test(url));
-  return [...new Set(remembered)];
-}
-
-async function maybePromoteGoalToDone(childBody: string, token: string): Promise<void> {
-  const goalNumber = Number(childBody.match(/win-predict-ai-orchestrator#(\d+)/)?.[1] ?? "");
-  if (!goalNumber) return;
-  const comments = listIssueComments(GOAL_REPO, goalNumber, token);
-  const plan = extractStoredPlan(comments, goalNumber);
-  if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return;
-  for (const task of plan.tasks) {
-    const child = findExistingChild(task, plan.goal_number, token);
-    if (!child) return;
-    if (!child.closed) return;
-  }
-  const goalUrl = `https://github.com/${GOAL_REPO}/issues/${goalNumber}`;
-  addToProject(goalUrl, "Done", token);
-  commentOnGoal(
-    goalNumber,
-    formatDispatchComment(
-      { phase: "review", at: new Date().toISOString() },
-      ["**Готово.** Все child закрыты — Goal в Done."],
-    ),
-  );
-  await notifyTelegram(`Goal #${goalNumber}: Done\n${goalUrl}`);
-}
-
-async function handleChildRelease(item: BoardIssue, token: string): Promise<boolean> {
-  const comments = listIssueComments(item.repo, item.number, token);
-  const state = lastDispatchState(comments);
-  if (state?.phase === "releasing" && isActivePhase(state, "releasing")) {
-    console.log(`skip release ${item.url}: already releasing`);
-    return false;
-  }
-  const prUrls = findPrsForRelease(item.url, state, token);
-  // Уже ловили конфликт, но карточка снова на релизе — сразу в In Progress (MODE B).
-  if (lastReleaseConflictNote(comments)) {
-    await bounceReleaseConflict(
-      item,
-      prUrls,
-      ["повторный конфликт при релизе"],
-      "Cannot update / merge due to conflicts (см. предыдущий комментарий)",
-      token,
-    );
-    return false;
-  }
-  await notifyTelegram(`Доска: релиз ${item.repo} #${item.number}\n${item.url}`);
-  claimReleasing(item.repo, item.number, token, { prUrls });
-  await sleep(CLAIM_WAIT_MS);
-
-  const notes: string[] = [];
-  if (!prUrls.length) {
-    if (item.closed) {
-      addToProject(item.url, "Done", token);
-      notes.push("issue уже закрыт, PR нет — Done");
-    } else {
-      notes.push("открытого PR нет — верни в Review или приложи PR");
-      commentOnIssue(
-        item.repo,
-        item.number,
-        formatDispatchComment(
-          { phase: "error", at: new Date().toISOString() },
-          [
-            "**Релиз не вышел.** Нет открытого PR. Карточка в In Progress — закрой вручную, верни в Review или приложи PR (повторю по тому же «релизь»).",
-          ],
-        ),
-        token,
-      );
-      await notifyTelegram(`Релиз: нет PR\n${item.url}`);
-      return false;
-    }
-  } else {
-    let mergeSha: string | undefined;
-    let releasedVersion: string | undefined;
-    for (const prUrl of prUrls) {
-      try {
-        const prepared = prepareReleaseForPr(prUrl, item.url, token);
-        notes.push(`${prUrl}: ${prepared.note}`);
-        if (prepared.version) releasedVersion = prepared.version;
-        const merged = mergePullRequest(prUrl, token);
-        notes.push(merged);
-        try {
-          const { repo: prRepo, number: prNumber } = parsePrUrl(prUrl);
-          const sha = gh(
-            ["pr", "view", String(prNumber), "-R", prRepo, "--json", "mergeCommit", "--jq", ".mergeCommit.oid // empty"],
-            token,
-          );
-          if (sha) mergeSha = sha;
-        } catch {
-          /* optional */
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        notes.push(`${prUrl}: ошибка — ${message.slice(0, 300)}`);
-        if (isReleaseConflict(err)) {
-          await bounceReleaseConflict(item, prUrls, notes, message, token);
-          return false;
-        }
-        commentOnIssue(
-          item.repo,
-          item.number,
-          formatDispatchComment(
-            { phase: "error", prUrls, at: new Date().toISOString() },
-            [
-              "**Релиз упал.** Карточка в In Progress — повторю на следующем тике (CI/сеть), или верни в Review.",
-              ...notes.map((n) => `- ${n}`),
-            ],
-          ),
-          token,
-        );
-        await notifyTelegram(`Релиз ошибка\n${item.url}\n${message.slice(0, 400)}`);
-        return false;
-      }
-    }
-    if (isLibraryPackageRepo(item.repo)) {
-      try {
-        const packageName = packageNameForLibraryRepo(item.repo);
-        if (packageName) {
-          const stable = waitForStablePackageVersion(
-            item.repo,
-            packageName,
-            token,
-            gh,
-            mergeSha,
-            releasedVersion,
-          );
-          notes.push(`стабильная ${packageName}@${stable}`);
-          const promoteNotes = await promoteStableIntoGoalConsumers(
-            item.body,
-            item.repo,
-            stable,
-            token,
-          );
-          notes.push(...promoteNotes);
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        notes.push(`promote stable: ${message.slice(0, 300)}`);
-        commentOnIssue(
-          item.repo,
-          item.number,
-          formatDispatchComment(
-            { phase: "error", prUrls, at: new Date().toISOString() },
-            [
-              "**Релиз смержен, но promote stable в app/admin упал.** Добей bump вручную или поправь и снова «релизь» (если ещё есть что мержить).",
-              ...notes.map((n) => `- ${n}`),
-            ],
-          ),
-          token,
-        );
-        await notifyTelegram(`Релиз promote ошибка\n${item.url}\n${message.slice(0, 400)}`);
-        return false;
-      }
-    }
-    addToProject(item.url, "Done", token);
-  }
-
-  commentOnIssue(
-    item.repo,
-    item.number,
-    formatDispatchComment(
-      { phase: "review", prUrls, at: new Date().toISOString() },
-      ["**Релиз.** Версия, ченджлог и merge сделаны — колонка Done.", ...notes.map((n) => `- ${n}`)],
-    ),
-    token,
-  );
-  await notifyTelegram(`Релиз Done\n${item.url}\n${notes.join("\n")}`);
-  await catchUpGoalWorkers(item.body, token);
-  await maybePromoteGoalToDone(item.body, token);
-  return true;
-}
-
 async function handleGoalRelease(item: BoardIssue, token: string): Promise<void> {
   const comments = listIssueComments(item.repo, item.number, token);
-  const state = lastDispatchState(comments);
+  const state = lastGoalDispatchState(comments);
   if (state?.phase === "releasing" && isActivePhase(state, "releasing")) {
     console.log(`skip goal release #${item.number}: already releasing`);
     return;
@@ -3150,46 +2824,84 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
       item.number,
       formatDispatchComment(
         { phase: "review", at: new Date().toISOString() },
-        ["**Готово.** Плана/child нет — Goal в Done."],
+        ["**Готово.** Плана нет — Goal в Done."],
       ),
     );
     return;
   }
 
-  const board = listProjectIssues(token);
+  const ordered = [...plan.tasks].sort(
+    (a, b) => a.parallel_group - b.parallel_group || a.id.localeCompare(b.id),
+  );
   const notes: string[] = [];
-  let released = 0;
   let failed = 0;
-  for (const task of plan.tasks) {
-    const child = findExistingChild(task, plan.goal_number, token);
-    if (!child) {
-      notes.push(`${task.id}: child не найден`);
+  for (const task of ordered) {
+    const open = findOpenPrsForGoalTask(plan.goal_number, task.id, task.repo, token);
+    const merged = findMergedPrsForGoalTask(plan.goal_number, task.id, task.repo, token);
+    if (!open.length && merged.length) {
+      notes.push(`${task.id}: уже смержен ${merged[0].url}`);
+      continue;
+    }
+    if (!open.length) {
+      notes.push(`${task.id}: нет PR`);
       failed += 1;
       continue;
     }
-    if (child.closed) {
-      notes.push(`${task.id}: уже закрыт`);
-      addToProject(child.url, "Done", token);
-      released += 1;
-      continue;
+    try {
+      let mergeSha: string | undefined;
+      let releasedVersion: string | undefined;
+      for (const pr of open) {
+        const prepared = prepareReleaseForPr(pr.url, item.url, token);
+        notes.push(`${task.id}: ${prepared.note}`);
+        if (prepared.version) releasedVersion = prepared.version;
+        notes.push(mergePullRequest(pr.url, token));
+        try {
+          const { repo: prRepo, number: prNumber } = parsePrUrl(pr.url);
+          const sha = gh(
+            ["pr", "view", String(prNumber), "-R", prRepo, "--json", "mergeCommit", "--jq", ".mergeCommit.oid // empty"],
+            token,
+          );
+          if (sha) mergeSha = sha;
+        } catch {
+          /* optional */
+        }
+      }
+      if (isLibraryPackageRepo(task.repo)) {
+        const packageName = packageNameForLibraryRepo(task.repo);
+        if (packageName) {
+          const stable = waitForStablePackageVersion(
+            task.repo,
+            packageName,
+            token,
+            gh,
+            mergeSha,
+            releasedVersion,
+          );
+          notes.push(`${task.id}: стабильная ${packageName}@${stable}`);
+          notes.push(
+            ...(await promoteStableIntoGoalConsumers(plan.goal_number, task.repo, stable, token)),
+          );
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      notes.push(`${task.id}: ошибка — ${message.slice(0, 300)}`);
+      failed += 1;
+      if (isReleaseConflict(err)) {
+        addToProject(item.url, "In Progress", token);
+        commentOnGoal(
+          item.number,
+          formatDispatchComment(
+            { phase: "error", at: new Date().toISOString() },
+            [
+              "**Релиз: конфликт с main.** Goal → In Progress. Воркер MODE B подтянет main.",
+              ...notes.map((n) => `- ${n}`),
+            ],
+          ),
+        );
+        return;
+      }
     }
-    const card = board.find((entry) => entry.url === child.url);
-    const parsed = parseIssueUrl(child.url);
-    const fetched = fetchIssue(parsed.repo, parsed.number, token);
-    const childIssue: BoardIssue = {
-      repo: parsed.repo,
-      number: fetched.number,
-      title: fetched.title,
-      body: fetched.body || "",
-      url: child.url,
-      labels: fetched.labels.map((label) => label.name),
-      status: card?.status ?? "In Progress",
-      closed: false,
-    };
-    const ok = await handleChildRelease(childIssue, token);
-    notes.push(`${task.id}: ${ok ? "релиз" : "не вышло"}`);
-    if (ok) released += 1;
-    else failed += 1;
   }
 
   if (failed === 0) {
@@ -3198,17 +2910,17 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
       item.number,
       formatDispatchComment(
         { phase: "review", at: new Date().toISOString() },
-        ["**Готово.** Child-релизы завершены — Goal в Done.", ...notes.map((n) => `- ${n}`)],
+        ["**Готово.** PR смержены — Goal в Done.", ...notes.map((n) => `- ${n}`)],
       ),
     );
-    await notifyTelegram(`Goal #${item.number}: Done (${released})\n${item.url}`);
+    await notifyTelegram(`Goal #${item.number}: Done\n${item.url}`);
   } else {
     commentOnGoal(
       item.number,
       formatDispatchComment(
         { phase: "error", at: new Date().toISOString() },
         [
-          "**Релиз Goal неполный.** Часть child ещё открыта — поправь и снова In Progress + «релизь».",
+          "**Релиз Goal неполный.** Поправь и снова In Progress + «релизь».",
           ...notes.map((n) => `- ${n}`),
         ],
       ),
@@ -3222,11 +2934,7 @@ async function handleReadyToRelease(item: BoardIssue, token: string): Promise<vo
     await handleGoalRelease(item, token);
     return;
   }
-  if (!isRepo(item.repo)) {
-    console.log(`skip release ${item.url}: не рабочий репо`);
-    return;
-  }
-  await handleChildRelease(item, token);
+  console.log(`skip release ${item.url}: не штаб-репо`);
 }
 
 async function watchBoard(): Promise<void> {
@@ -3251,29 +2959,18 @@ async function watchBoard(): Promise<void> {
 
     const ready = all.filter((item) => item.status === LEGACY_READY_TO_RELEASE && !item.closed);
     const readyGoals = ready.filter((item) => isHqIssue(item.repo));
-    const readyChildren = ready.filter((item) => isRepo(item.repo));
-    if (ready.length) {
-      console.log(
-        `watch: legacy release ${readyGoals.length} goal, ${readyChildren.length} child in ${LEGACY_READY_TO_RELEASE}`,
-      );
-      for (const item of [...readyChildren, ...readyGoals]) {
+    if (readyGoals.length) {
+      console.log(`watch: legacy release ${readyGoals.length} goal in ${LEGACY_READY_TO_RELEASE}`);
+      for (const item of readyGoals) {
         await handleReadyToRelease(item, token);
       }
     }
 
     const items = all.filter((item) => item.status === "In Progress" && !item.closed);
     const goals = items.filter((item) => isHqIssue(item.repo));
-    const children = items.filter((item) => isRepo(item.repo));
-    console.log(`watch: ${goals.length} goal, ${children.length} child in In Progress`);
+    console.log(`watch: ${goals.length} goal in In Progress`);
     for (const goal of goals) {
       await handleGoalFromBoard(goal, token);
-    }
-    const afterGoals = listProjectIssues(token).filter(
-      (item) => item.status === "In Progress" && !item.closed,
-    );
-    const remaining = afterGoals.filter((item) => isRepo(item.repo));
-    for (const child of remaining) {
-      await handleChildFromBoard(child, token);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -3292,7 +2989,7 @@ async function commentDispatchFromStored(
   stored: Plan,
   token: string,
 ): Promise<void> {
-  const notes = await dispatchPlan(stored, new Map(), token, { skipIfOpenPr: true });
+  const notes = await dispatchPlan(stored, token, { skipIfOpenPr: true });
   const allSkipped = notes.length > 0 && notes.every(isIdleDispatchNote);
   if (allSkipped) {
     commentOnGoal(
