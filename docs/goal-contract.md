@@ -16,7 +16,7 @@ Goal — одна высокоуровневая цель **продукта**. 
 
 ## Создание
 
-Issues → **New issue** → выбери шаблон продукта (blank issue отключён).
+Issues → **New issue** → выбери шаблон продукта (blank issue отключён). GitHub Action [add-goal-to-project.yml](../.github/workflows/add-goal-to-project.yml) сам кладёт новую Goal с лейблом продукта на доску в **Inbox**.
 
 Не с доски Project → Create new issue: там шаблон не подставляется. Либо:
 
