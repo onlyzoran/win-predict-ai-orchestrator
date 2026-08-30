@@ -112,7 +112,7 @@ test("listBoardProjects: unique boards", () => {
   assert.equal(boards[0]?.id, "PVT_kwHOAom_KM4BgVLq");
 });
 
-test("resolveBoardProject: ignores stale ORCHESTRATOR_PROJECT_ID", () => {
+test("resolveBoardProject: uses registry board", () => {
   clearProductRegistryCache();
   const prev = process.env.ORCHESTRATOR_PROJECT_ID;
   process.env.ORCHESTRATOR_PROJECT_ID = "PVT_kwHOAom_KM4Bg7oB";

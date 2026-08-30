@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT=/opt/cursor-workers/win-predict-ai-orchestrator
 cd "$ROOT"
 
+# Board id lives in orchestrator/products/registry.json — stale env breaks GraphQL.
+unset ORCHESTRATOR_PROJECT_ID
+
 # Prefer GITHUB_PAT; fall back to legacy ORCHESTRATOR_GITHUB_TOKEN during migration.
 GITHUB_PAT="${GITHUB_PAT:-${ORCHESTRATOR_GITHUB_TOKEN:-}}"
 if [[ -n "${GITHUB_PAT}" ]]; then
@@ -20,6 +23,9 @@ else
   git fetch origin
 fi
 git reset --hard origin/main
+echo "board-watch rev: $(git rev-parse --short HEAD)"
+grep '"id": "PVT_' orchestrator/products/registry.json || true
+
 lock_after="$(git rev-parse HEAD:package-lock.json)"
 
 if [[ ! -d node_modules || "$lock_before" != "$lock_after" ]]; then

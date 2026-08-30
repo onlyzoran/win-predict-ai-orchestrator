@@ -444,9 +444,11 @@ async function closeActiveRun(run: InventoryRun, event: string): Promise<void> {
 function gh(args: string[], token: string): string {
   let last = "";
   for (let attempt = 1; attempt <= GH_RETRY; attempt++) {
+    const env = { ...process.env, GH_TOKEN: token, GITHUB_TOKEN: token };
+    delete env.ORCHESTRATOR_PROJECT_ID;
     const result = spawnSync("gh", args, {
       encoding: "utf8",
-      env: { ...process.env, GH_TOKEN: token, GITHUB_TOKEN: token },
+      env,
     });
     if (result.status === 0) return (result.stdout || "").trim();
     last = (result.stderr || result.stdout || `gh ${args.join(" ")}`).trim();
@@ -3034,9 +3036,8 @@ async function watchBoard(): Promise<void> {
     const token = writeToken();
     if (!token) throw new Error("нет секрета GITHUB_PAT");
     const boards = listBoardProjects();
-    const staleProjectId = process.env.ORCHESTRATOR_PROJECT_ID?.trim();
-    if (staleProjectId && !boards.some((board) => board.id === staleProjectId)) {
-      console.warn(`unset stale ORCHESTRATOR_PROJECT_ID=${staleProjectId}`);
+    if (process.env.ORCHESTRATOR_PROJECT_ID?.trim()) {
+      console.warn(`unset ORCHESTRATOR_PROJECT_ID=${process.env.ORCHESTRATOR_PROJECT_ID} (registry is source of truth)`);
       delete process.env.ORCHESTRATOR_PROJECT_ID;
     }
     console.log(`project boards: ${boards.map((board) => board.id).join(", ")}`);

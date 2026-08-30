@@ -114,14 +114,7 @@ export function listBoardProjects(registry = loadProductRegistry()): BoardProjec
 }
 
 export function resolveBoardProject(productId: string, registry = loadProductRegistry()): BoardProject {
-  const board = getBoardProject(productId, registry);
-  const envId = process.env.ORCHESTRATOR_PROJECT_ID?.trim();
-  if (envId && envId !== board.id) {
-    console.warn(
-      `ORCHESTRATOR_PROJECT_ID=${envId} ignored (stale or deleted); using registry board ${board.id}`,
-    );
-  }
-  return board;
+  return getBoardProject(productId, registry);
 }
 
 export function stubNeedsHumanPlan(goalNumber: number, productId: string): {
