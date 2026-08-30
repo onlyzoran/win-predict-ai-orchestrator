@@ -13,6 +13,12 @@ const LEGACY_PRODUCT_IDS: Record<string, string> = {
 
 export type ProductStatus = "active" | "stub";
 
+export type BoardProject = {
+  id: string;
+  statusFieldId: string;
+  statusOptions?: Partial<Record<string, string>>;
+};
+
 export type ProductSurface = {
   repo: string;
   trigger: "sdk" | "slash" | "issue_only";
@@ -23,6 +29,7 @@ export type ProductSurface = {
 export type ProductEntry = {
   status: ProductStatus;
   label: string;
+  board?: BoardProject;
   surfaces: Record<string, ProductSurface>;
 };
 
@@ -43,6 +50,17 @@ export function loadProductRegistry(path = REGISTRY_PATH): ProductRegistry {
     if (!entry.surfaces || typeof entry.surfaces !== "object") {
       throw new Error(`registry: ${id}.surfaces`);
     }
+    if (entry.board) {
+      if (typeof entry.board.id !== "string" || !entry.board.id.startsWith("PVT_")) {
+        throw new Error(`registry: ${id}.board.id`);
+      }
+      if (typeof entry.board.statusFieldId !== "string" || !entry.board.statusFieldId.startsWith("PVT")) {
+        throw new Error(`registry: ${id}.board.statusFieldId`);
+      }
+    }
+  }
+  if (!raw[DEFAULT_PRODUCT]?.board) {
+    throw new Error(`registry: ${DEFAULT_PRODUCT}.board required`);
   }
   if (path === REGISTRY_PATH) cached = raw;
   return raw;
@@ -72,6 +90,38 @@ export function getProduct(id: string, registry = loadProductRegistry()): Produc
   const entry = registry[id];
   if (!entry) throw new Error(`неизвестный продукт: ${id}`);
   return entry;
+}
+
+/** GitHub Project board for product Goals (defaults to win-predict-ai board). */
+export function getBoardProject(productId: string, registry = loadProductRegistry()): BoardProject {
+  const entry = getProduct(productId, registry);
+  const board = entry.board ?? registry[DEFAULT_PRODUCT]?.board;
+  if (!board) throw new Error(`registry: нет board для ${productId}`);
+  return board;
+}
+
+/** Unique boards referenced by products (watch polls all). */
+export function listBoardProjects(registry = loadProductRegistry()): BoardProject[] {
+  const seen = new Set<string>();
+  const out: BoardProject[] = [];
+  for (const id of Object.keys(registry)) {
+    const board = getBoardProject(id, registry);
+    if (seen.has(board.id)) continue;
+    seen.add(board.id);
+    out.push(board);
+  }
+  return out;
+}
+
+export function resolveBoardProject(productId: string, registry = loadProductRegistry()): BoardProject {
+  const board = getBoardProject(productId, registry);
+  const envId = process.env.ORCHESTRATOR_PROJECT_ID?.trim();
+  if (envId && envId !== board.id) {
+    console.warn(
+      `ORCHESTRATOR_PROJECT_ID=${envId} ignored (stale or deleted); using registry board ${board.id}`,
+    );
+  }
+  return board;
 }
 
 export function stubNeedsHumanPlan(goalNumber: number, productId: string): {

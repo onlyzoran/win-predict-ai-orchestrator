@@ -9,8 +9,11 @@ import { unmetDependencyIds } from "./depends.js";
 import {
   formatProductContext,
   getProduct,
+  listBoardProjects,
+  resolveBoardProject,
   resolveProductId,
   stubNeedsHumanPlan,
+  type BoardProject,
 } from "./products.js";
 import {
   branchNameForPrerelease,
@@ -43,25 +46,17 @@ const GOAL_REPO = "onlyzoran/win-predict-ai-orchestrator";
 function isHqIssue(repo: string): boolean {
   return repo === GOAL_REPO;
 }
-const PROJECT_ID = "PVT_kwHOAom_KM4BgVLq";
-const STATUS_FIELD_ID = "PVTSSF_lAHOAom_KM4BgVLqzhahv2g";
 const STATUS_NAMES = ["Inbox", "In Progress", "Review", "Done"] as const;
 type StatusName = (typeof STATUS_NAMES)[number];
 /** Legacy-колонка: ещё могут лежать старые карточки, новые не создаём. */
 const LEGACY_READY_TO_RELEASE = "Ready to Release";
-/** Fallback, пока GraphQL не отдал актуальные option id (в т.ч. Done). */
-const STATUS_OPTION_FALLBACK: Partial<Record<StatusName, string>> = {
-  Inbox: "f75ad846",
-  "In Progress": "47fc9ee4",
-  Review: "57240b08",
-};
 const STATUS_OPTION_COLOR: Record<StatusName, string> = {
   Inbox: "BLUE",
   "In Progress": "YELLOW",
   Review: "PURPLE",
   Done: "GREEN",
 };
-let statusOptionCache: Partial<Record<StatusName, string>> | null = null;
+const statusOptionCaches = new Map<string, Partial<Record<StatusName, string>>>();
 const PLAN_MARKER = "<!-- orchestrator-plan -->";
 const DISPATCH_MARKER = "<!-- orchestrator-dispatch -->";
 const STATE_RE = /<!-- orchestrator-state:(.*?) -->/;
@@ -1080,22 +1075,42 @@ function issueNodeId(url: string, token: string): string {
 
 type StatusOption = { id: string; name: string; color: string };
 
-function listStatusOptions(token: string): StatusOption[] {
+function productIdForGoalUrl(url: string, token: string): string {
+  const match = url.match(/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)/);
+  if (!match || !url.includes(GOAL_REPO)) return resolveProductId([]);
+  const issue = fetchIssue(GOAL_REPO, Number(match[1]), token);
+  return resolveProductId(issue.labels.map((l) => l.name));
+}
+
+function boardStatusFallback(board: BoardProject): Partial<Record<StatusName, string>> {
+  const out: Partial<Record<StatusName, string>> = {};
+  for (const name of STATUS_NAMES) {
+    const id = board.statusOptions?.[name];
+    if (id) out[name] = id;
+  }
+  return out;
+}
+
+function listStatusOptions(token: string, board: BoardProject): StatusOption[] {
   const data = graphql<{
     node: {
       field: { options: StatusOption[] } | null;
-    };
+    } | null;
   }>(
     token,
     'query($projectId:ID!){node(id:$projectId){...on ProjectV2{field(name:"Status"){...on ProjectV2SingleSelectField{options{id name color}}}}}}',
-    { projectId: PROJECT_ID },
+    { projectId: board.id },
   );
+  if (!data.node) {
+    throw new Error(`GitHub Project ${board.id} not found (deleted or stale ORCHESTRATOR_PROJECT_ID?)`);
+  }
   return data.node.field?.options ?? [];
 }
 
-function ensureStatusOptions(token: string): Partial<Record<StatusName, string>> {
-  if (statusOptionCache) return statusOptionCache;
-  let options = listStatusOptions(token);
+function ensureStatusOptions(token: string, board: BoardProject): Partial<Record<StatusName, string>> {
+  const cached = statusOptionCaches.get(board.id);
+  if (cached) return cached;
+  let options = listStatusOptions(token, board);
   const byName = new Map(options.map((option) => [option.name, option]));
   const missing = STATUS_NAMES.filter((name) => !byName.has(name));
   if (missing.length) {
@@ -1121,7 +1136,7 @@ function ensureStatusOptions(token: string): Partial<Record<StatusName, string>>
         query: mutation,
         variables: {
           input: {
-            fieldId: STATUS_FIELD_ID,
+            fieldId: board.statusFieldId,
             singleSelectOptions: next,
           },
         },
@@ -1139,41 +1154,43 @@ function ensureStatusOptions(token: string): Partial<Record<StatusName, string>>
     if (payload.errors?.length) {
       throw new Error(payload.errors.map((e) => e.message).join("; "));
     }
-    options = payload.data?.updateProjectV2Field?.projectV2Field?.options ?? listStatusOptions(token);
+    options = payload.data?.updateProjectV2Field?.projectV2Field?.options ?? listStatusOptions(token, board);
     console.log(`project Status: созданы колонки ${missing.join(", ")}`);
   }
-  const map: Partial<Record<StatusName, string>> = { ...STATUS_OPTION_FALLBACK };
+  const map: Partial<Record<StatusName, string>> = { ...boardStatusFallback(board) };
   for (const option of options) {
     if ((STATUS_NAMES as readonly string[]).includes(option.name)) {
       map[option.name as StatusName] = option.id;
     }
   }
-  statusOptionCache = map;
+  statusOptionCaches.set(board.id, map);
   return map;
 }
 
-function statusOptionId(status: StatusName, token: string): string {
-  const id = ensureStatusOptions(token)[status] ?? STATUS_OPTION_FALLBACK[status];
+function statusOptionId(status: StatusName, token: string, board: BoardProject): string {
+  const id = ensureStatusOptions(token, board)[status] ?? boardStatusFallback(board)[status];
   if (!id) throw new Error(`нет option id для колонки ${status}`);
   return id;
 }
 
-function addToProject(url: string, status: StatusName, token: string): void {
+function addToProject(url: string, status: StatusName, token: string, productId?: string): void {
   try {
+    const pid = productId ?? productIdForGoalUrl(url, token);
+    const board = resolveBoardProject(pid);
     const contentId = issueNodeId(url, token);
     const added = graphql<{ addProjectV2ItemById: { item: { id: string } } }>(
       token,
       "mutation($projectId:ID!,$contentId:ID!){addProjectV2ItemById(input:{projectId:$projectId,contentId:$contentId}){item{id}}}",
-      { projectId: PROJECT_ID, contentId },
+      { projectId: board.id, contentId },
     );
     graphql(
       token,
       "mutation($projectId:ID!,$itemId:ID!,$fieldId:ID!,$optionId:String!){updateProjectV2ItemFieldValue(input:{projectId:$projectId,itemId:$itemId,fieldId:$fieldId,value:{singleSelectOptionId:$optionId}}){projectV2Item{id}}}",
       {
-        projectId: PROJECT_ID,
+        projectId: board.id,
         itemId: added.addProjectV2ItemById.item.id,
-        fieldId: STATUS_FIELD_ID,
-        optionId: statusOptionId(status, token),
+        fieldId: board.statusFieldId,
+        optionId: statusOptionId(status, token, board),
       },
     );
   } catch (err) {
@@ -1182,45 +1199,67 @@ function addToProject(url: string, status: StatusName, token: string): void {
   }
 }
 
-function listProjectIssues(token: string): BoardIssue[] {
-  const query = `query($projectId:ID!){node(id:$projectId){...on ProjectV2{items(first:100){nodes{id fieldValues(first:20){nodes{...on ProjectV2ItemFieldSingleSelectValue{name field{...on ProjectV2SingleSelectField{id}}}}} content{__typename ...on Issue{number title body url state repository{nameWithOwner} labels(first:20){nodes{name}}}}}}}}}`;
-  const data = graphql<{
-    node: {
-      items: {
-        nodes: Array<{
-          fieldValues: { nodes: Array<{ name?: string; field?: { id?: string } }> };
-          content: {
-            __typename: string;
-            number?: number;
-            title?: string;
-            body?: string | null;
-            url?: string;
-            state?: string;
-            repository?: { nameWithOwner: string };
-            labels?: { nodes: Array<{ name: string }> };
-          } | null;
-        }>;
-      };
-    };
-  }>(token, query, { projectId: PROJECT_ID });
+function listProjectIssuesFor(token: string, board: BoardProject): BoardIssue[] {
+  const query = `query($projectId:ID!,$after:String){node(id:$projectId){...on ProjectV2{items(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id fieldValues(first:20){nodes{...on ProjectV2ItemFieldSingleSelectValue{name field{...on ProjectV2SingleSelectField{id}}}}} content{__typename ...on Issue{number title body url state repository{nameWithOwner} labels(first:20){nodes{name}}}}}}}}}`;
   const issues: BoardIssue[] = [];
-  for (const item of data.node.items.nodes) {
-    const content = item.content;
-    if (!content || content.__typename !== "Issue" || !content.repository || !content.number || !content.url) {
-      continue;
+  let after: string | null = null;
+  for (;;) {
+    const data = graphql<{
+      node: {
+        items: {
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          nodes: Array<{
+            fieldValues: { nodes: Array<{ name?: string; field?: { id?: string } }> };
+            content: {
+              __typename: string;
+              number?: number;
+              title?: string;
+              body?: string | null;
+              url?: string;
+              state?: string;
+              repository?: { nameWithOwner: string };
+              labels?: { nodes: Array<{ name: string }> };
+            } | null;
+          }>;
+        };
+      } | null;
+    }>(token, query, { projectId: board.id, after });
+    if (!data.node) {
+      throw new Error(`GitHub Project ${board.id} not found (deleted or stale ORCHESTRATOR_PROJECT_ID?)`);
     }
-    const status =
-      item.fieldValues.nodes.find((node) => node.field?.id === STATUS_FIELD_ID)?.name ?? "";
-    issues.push({
-      repo: content.repository.nameWithOwner,
-      number: content.number,
-      title: content.title ?? "",
-      body: content.body ?? "",
-      url: content.url,
-      labels: (content.labels?.nodes ?? []).map((label) => label.name),
-      status,
-      closed: content.state === "CLOSED",
-    });
+    for (const item of data.node.items.nodes) {
+      const content = item.content;
+      if (!content || content.__typename !== "Issue" || !content.repository || !content.number || !content.url) {
+        continue;
+      }
+      const status =
+        item.fieldValues.nodes.find((node) => node.field?.id === board.statusFieldId)?.name ?? "";
+      issues.push({
+        repo: content.repository.nameWithOwner,
+        number: content.number,
+        title: content.title ?? "",
+        body: content.body ?? "",
+        url: content.url,
+        labels: (content.labels?.nodes ?? []).map((label) => label.name),
+        status,
+        closed: content.state === "CLOSED",
+      });
+    }
+    if (!data.node.items.pageInfo.hasNextPage) break;
+    after = data.node.items.pageInfo.endCursor;
+  }
+  return issues;
+}
+
+function listProjectIssues(token: string): BoardIssue[] {
+  const seen = new Set<string>();
+  const issues: BoardIssue[] = [];
+  for (const board of listBoardProjects()) {
+    for (const item of listProjectIssuesFor(token, board)) {
+      if (seen.has(item.url)) continue;
+      seen.add(item.url);
+      issues.push(item);
+    }
   }
   return issues;
 }

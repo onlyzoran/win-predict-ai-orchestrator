@@ -6,15 +6,25 @@ import assert from "node:assert/strict";
 import {
   clearProductRegistryCache,
   formatProductContext,
+  getBoardProject,
+  listBoardProjects,
   loadProductRegistry,
+  resolveBoardProject,
   resolveProductId,
   stubNeedsHumanPlan,
 } from "./products.js";
+
+const sampleBoard = {
+  id: "PVT_test_board",
+  statusFieldId: "PVTSSF_test",
+  statusOptions: { Inbox: "opt-inbox" },
+};
 
 const sample = {
   "win-predict-ai": {
     status: "active",
     label: "win-predict-ai",
+    board: sampleBoard,
     surfaces: {
       ui: { repo: "onlyzoran/win-predict-ai-ui", trigger: "sdk" },
     },
@@ -84,6 +94,33 @@ test("loadProductRegistry: shipped file", () => {
   const registry = loadProductRegistry();
   assert.equal(registry["win-predict-ai"]?.status, "active");
   assert.equal(registry["win-predict-ai"]?.label, "win-predict-ai");
+  assert.equal(registry["win-predict-ai"]?.board?.id, "PVT_kwHOAom_KM4BgVLq");
   assert.equal(registry["telegram-bots"]?.status, "stub");
   assert.equal(registry["ios-games"]?.status, "stub");
+});
+
+test("getBoardProject: stub inherits win-predict-ai board", () => {
+  clearProductRegistryCache();
+  const registry = loadProductRegistry();
+  assert.equal(getBoardProject("telegram-bots", registry).id, registry["win-predict-ai"]?.board?.id);
+});
+
+test("listBoardProjects: unique boards", () => {
+  clearProductRegistryCache();
+  const boards = listBoardProjects();
+  assert.equal(boards.length, 1);
+  assert.equal(boards[0]?.id, "PVT_kwHOAom_KM4BgVLq");
+});
+
+test("resolveBoardProject: ignores stale ORCHESTRATOR_PROJECT_ID", () => {
+  clearProductRegistryCache();
+  const prev = process.env.ORCHESTRATOR_PROJECT_ID;
+  process.env.ORCHESTRATOR_PROJECT_ID = "PVT_kwHOAom_KM4Bg7oB";
+  try {
+    const board = resolveBoardProject("win-predict-ai");
+    assert.equal(board.id, "PVT_kwHOAom_KM4BgVLq");
+  } finally {
+    if (prev === undefined) delete process.env.ORCHESTRATOR_PROJECT_ID;
+    else process.env.ORCHESTRATOR_PROJECT_ID = prev;
+  }
 });

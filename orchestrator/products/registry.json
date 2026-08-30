@@ -2,6 +2,16 @@
   "win-predict-ai": {
     "status": "active",
     "label": "win-predict-ai",
+    "board": {
+      "id": "PVT_kwHOAom_KM4BgVLq",
+      "statusFieldId": "PVTSSF_lAHOAom_KM4BgVLqzhahv2g",
+      "statusOptions": {
+        "Inbox": "f75ad846",
+        "In Progress": "47fc9ee4",
+        "Review": "57240b08",
+        "Done": "98236657"
+      }
+    },
     "surfaces": {
       "ui": {
         "repo": "onlyzoran/win-predict-ai-ui",
