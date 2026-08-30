@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Продукт: **win-predict-ai**. Карточка Inbox → In Progress (или `/orchestrate`) — оркестратор создаст крупные child
-        (обычно одно на отмеченную поверхность) в рабочих репо. Отмечай только нужные поверхности.
+        Продукт: **win-predict-ai**. Карточка Inbox → In Progress (или `/orchestrate`) — менеджер сам выберет поверхности
+        и создаст крупные child (обычно одно на поверхность) в рабочих репо.
         Правки после Review: комментарий в этот issue и карточка снова In Progress.
         Приёмка: «релизь» / «можно релизить» и Review → In Progress.
   - type: textarea
@@ -17,18 +17,6 @@ body:
       placeholder: В админке можно задать порядок туров, на фронте он отображается в виджете турнира.
     validations:
       required: true
-  - type: checkboxes
-    id: surfaces
-    attributes:
-      label: Поверхности
-      description: Где ожидаются изменения. Оркестратор может сузить или расширить список.
-      options:
-        - label: ui (`win-predict-ai-ui`)
-        - label: icons (`win-predict-ai-icons`)
-        - label: data (`win-predict-ai-data`)
-        - label: app (`win-predict-ai`)
-        - label: admin (`win-predict-ai-admin`)
-        - label: ios (`win-predict-ai-ios`)
   - type: textarea
     id: constraints
     attributes:
