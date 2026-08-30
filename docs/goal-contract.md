@@ -30,7 +30,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 |---|---|
 | Результат | Что должно быть правдой в конце |
 
-Лейблы `goal` и `product:…` ставит шаблон. Поверхности, ограничения и критерии готовности менеджер выводит сам из Результата.
+Лейбл `product:…` ставит шаблон. Любой issue в этом репо — Goal (лейбл `goal` не нужен). Поверхности, ограничения и критерии готовности менеджер выводит сам из Результата.
 
 **Stub-продукт** (bots/games): Inbox → In Progress → комментарий `needs_human`, карточка в Review, child нет. Когда появятся репо — допиши registry и повтори.
 
@@ -56,8 +56,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 
 | Лейбл | Где | Смысл |
 |---|---|---|
-| `goal` | только этот репо | это цель, не child |
-| `product:win-predict-ai` | Goal | продукт win-predict |
+| `product:win-predict-ai` | Goal (этот репо) | продукт win-predict |
 | `product:telegram-bots` | Goal | продукт bots (stub) |
 | `product:games` | Goal | продукт games (stub) |
 | `ui` | Goal и child | `win-predict-ai-ui` |

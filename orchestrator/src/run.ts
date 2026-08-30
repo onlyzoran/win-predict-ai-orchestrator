@@ -44,6 +44,10 @@ import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GOAL_REPO = "onlyzoran/win-predict-ai-orchestrator";
+
+function isHqIssue(repo: string): boolean {
+  return repo === GOAL_REPO;
+}
 const PROJECT_ID = "PVT_kwHOAom_KM4BgVLq";
 const STATUS_FIELD_ID = "PVTSSF_lAHOAom_KM4BgVLqzhahv2g";
 const STATUS_NAMES = ["Inbox", "In Progress", "Review", "Done"] as const;
@@ -2587,7 +2591,7 @@ async function handleChildFromBoard(item: BoardIssue, token: string): Promise<vo
 function cardFromIssue(item: BoardIssue): InventoryCard {
   const fromLabel = item.labels.find((name) => isSurface(name));
   const kind: InventoryCard["kind"] =
-    item.repo === GOAL_REPO && item.labels.includes("goal") ? "goal" : "child";
+    item.repo === GOAL_REPO ? "goal" : "child";
   return {
     kind,
     repo: item.repo,
@@ -3214,7 +3218,7 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
 }
 
 async function handleReadyToRelease(item: BoardIssue, token: string): Promise<void> {
-  if (item.repo === GOAL_REPO && item.labels.includes("goal")) {
+  if (isHqIssue(item.repo)) {
     await handleGoalRelease(item, token);
     return;
   }
@@ -3246,7 +3250,7 @@ async function watchBoard(): Promise<void> {
     writeInventory(inventory);
 
     const ready = all.filter((item) => item.status === LEGACY_READY_TO_RELEASE && !item.closed);
-    const readyGoals = ready.filter((item) => item.repo === GOAL_REPO && item.labels.includes("goal"));
+    const readyGoals = ready.filter((item) => isHqIssue(item.repo));
     const readyChildren = ready.filter((item) => isRepo(item.repo));
     if (ready.length) {
       console.log(
@@ -3258,7 +3262,7 @@ async function watchBoard(): Promise<void> {
     }
 
     const items = all.filter((item) => item.status === "In Progress" && !item.closed);
-    const goals = items.filter((item) => item.repo === GOAL_REPO && item.labels.includes("goal"));
+    const goals = items.filter((item) => isHqIssue(item.repo));
     const children = items.filter((item) => isRepo(item.repo));
     console.log(`watch: ${goals.length} goal, ${children.length} child in In Progress`);
     for (const goal of goals) {
@@ -3317,8 +3321,9 @@ async function main(): Promise<void> {
   }
   const redo = /\/orchestrate\s+redo\b/i.test(comment.body);
 
-  if (!issue.labels.some((l) => l.name === "goal")) {
-    commentOnGoal(issue.number, "Команда `/orchestrate` только для Goal Issue (лейбл `goal`).");
+  const repo = process.env.GITHUB_REPOSITORY?.trim() || GOAL_REPO;
+  if (!isHqIssue(repo)) {
+    console.log("skip: /orchestrate только в штаб-репо");
     return;
   }
 

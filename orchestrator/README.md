@@ -20,7 +20,7 @@ orchestrator/
 
 ## `/orchestrate` и доска
 
-Комментарий `/orchestrate` на Goal Issue (лейбл `goal`) — запасной старт. Основной жест: карточка на доске.
+Комментарий `/orchestrate` на issue в этом репо (штаб = Goal) — запасной старт. Основной жест: карточка на доске.
 
 1. Goal **Inbox → In Progress** (или `/orchestrate`): local-агент на GitHub runner собирает план, child issues, Goal → **In Progress**, воркеры.
 2. Диспетчер:

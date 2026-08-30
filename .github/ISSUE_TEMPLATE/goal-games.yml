@@ -1,6 +1,6 @@
 name: games
 description: Цель для игр (iOS и др.). Рабочие репо пока не подключены.
-labels: ["goal", "product:games"]
+labels: ["product:games"]
 body:
   - type: markdown
     attributes:
