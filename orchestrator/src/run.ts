@@ -2104,9 +2104,7 @@ function postNonReadyPlan(issue: IssueCommentEvent["issue"], plan: Plan, token: 
       "",
       plan.summary,
       "",
-      "```json",
-      JSON.stringify(plan, null, 2),
-      "```",
+      formatPlanJsonDetails(plan),
     ].join("\n"),
   );
   addToProject(issue.html_url, "Review", token);
@@ -2224,6 +2222,19 @@ async function commentDispatch(
   return !failed && !allSkipped;
 }
 
+function formatPlanJsonDetails(plan: Plan): string {
+  return [
+    "<details>",
+    "<summary>План (JSON для оркестратора)</summary>",
+    "",
+    "```json",
+    JSON.stringify(plan, null, 2),
+    "```",
+    "",
+    "</details>",
+  ].join("\n");
+}
+
 function postPlanComment(issue: IssueCommentEvent["issue"], plan: Plan): void {
   const ordered = [...plan.tasks].sort(
     (a, b) => a.parallel_group - b.parallel_group || a.id.localeCompare(b.id),
@@ -2250,9 +2261,7 @@ function postPlanComment(issue: IssueCommentEvent["issue"], plan: Plan): void {
       rows,
       gates,
       "",
-      "```json",
-      JSON.stringify(plan, null, 2),
-      "```",
+      formatPlanJsonDetails(plan),
     ].join("\n"),
   );
 }
