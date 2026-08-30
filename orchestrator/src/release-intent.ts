@@ -30,3 +30,15 @@ export function isReleaseIntent(text: string): boolean {
 export function isReleaseablePhase(phase: string | undefined): boolean {
   return phase === "review" || phase === "releasing" || phase === "reviewing";
 }
+
+/** Review→In Progress + «релизь»: claimWorking уже мог выставить phase working. */
+export function shouldReleaseForBoardPhase(
+  phase: string | undefined,
+  notesAfterReview: string,
+  hadReviewAcceptance: boolean,
+): boolean {
+  if (!isReleaseIntent(notesAfterReview)) return false;
+  if (isReleaseablePhase(phase)) return true;
+  if (phase === "working" && hadReviewAcceptance) return true;
+  return false;
+}

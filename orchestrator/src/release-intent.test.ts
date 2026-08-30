@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isReleaseablePhase, isReleaseIntent } from "./release-intent.js";
+import { isReleaseablePhase, isReleaseIntent, shouldReleaseForBoardPhase } from "./release-intent.js";
 
 describe("isReleaseIntent", () => {
   it("ловат типичные фразы приёмки", () => {
@@ -39,10 +39,18 @@ describe("isReleaseablePhase", () => {
     assert.equal(isReleaseablePhase("releasing"), true);
     assert.equal(isReleaseablePhase("reviewing"), true);
   });
+});
 
-  it("working / error / пусто — нет (error отдельно в board)", () => {
-    assert.equal(isReleaseablePhase("working"), false);
-    assert.equal(isReleaseablePhase("error"), false);
-    assert.equal(isReleaseablePhase(undefined), false);
+describe("shouldReleaseForBoardPhase", () => {
+  it("working после Review + «релизь» — да", () => {
+    assert.equal(shouldReleaseForBoardPhase("working", "можно релизить", true), true);
+  });
+
+  it("working без приёмки — нет", () => {
+    assert.equal(shouldReleaseForBoardPhase("working", "можно релизить", false), false);
+  });
+
+  it("working с правками — нет", () => {
+    assert.equal(shouldReleaseForBoardPhase("working", "поправь отступы", true), false);
   });
 });

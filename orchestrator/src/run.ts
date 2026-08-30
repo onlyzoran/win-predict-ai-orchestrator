@@ -41,7 +41,7 @@ import {
   setPackageLockRootVersion,
   stripPrerelease,
 } from "./release.js";
-import { isReleaseablePhase, isReleaseIntent } from "./release-intent.js";
+import { shouldReleaseForBoardPhase } from "./release-intent.js";
 import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
 import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
 
@@ -735,16 +735,23 @@ function notesForWorker(comments: IssueComment[]): string {
     .join("\n\n---\n\n");
 }
 
-/** Review → In Progress + фраза про релиз → релизер, иначе воркер. */
+function hadGoalReviewAcceptance(comments: IssueComment[]): boolean {
+  return comments.some((comment) => {
+    const state = parseDispatchState(comment.body);
+    if (state?.phase === "review" && !state.taskId) return true;
+    return comment.body.includes(DISPATCH_MARKER) && /Нужна приёмка/.test(comment.body);
+  });
+}
+
+/** Review → In Progress + фраза про релиз → релизer, иначе воркер. */
 function shouldReleaseFromBoard(
   state: DispatchState | undefined,
   comments: IssueComment[],
 ): boolean {
-  if (!isReleaseIntent(notesAfterLastReview(comments))) return false;
+  const notes = notesAfterLastReview(comments);
+  if (!shouldReleaseForBoardPhase(state?.phase, notes, hadGoalReviewAcceptance(comments))) return false;
   if (lastReleaseConflictNote(comments)) return false;
   const phase = state?.phase;
-  // reviewing: claim без финального review — не глотать «релизь» до WORKING_STALE.
-  if (isReleaseablePhase(phase)) return true;
   if (phase === "error") {
     const lastError = [...comments]
       .reverse()
@@ -754,7 +761,7 @@ function shouldReleaseFromBoard(
     if (isResourceBackoff(state, comments)) return false;
     return true;
   }
-  return false;
+  return true;
 }
 
 const ACCEPT_HINT =
