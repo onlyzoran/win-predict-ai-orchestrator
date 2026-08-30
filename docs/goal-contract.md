@@ -59,12 +59,8 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 | `win-predict-ai` | Goal (этот репо) | продукт win-predict |
 | `telegram-bots` | Goal | продукт bots (stub) |
 | `games` | Goal | продукт games (stub) |
-| `ui` | Goal | `win-predict-ai-ui` |
-| `icons` | Goal | `win-predict-ai-icons` |
-| `data` | Goal | `win-predict-ai-data` |
-| `app` | Goal | `win-predict-ai` |
-| `admin` | Goal | `win-predict-ai-admin` |
-| `ios` | Goal | `win-predict-ai-ios` |
+
+Поверхности (ui, app, admin, …) — только в плане в комментарии Goal, отдельные лейблы не ставятся.
 
 ## Колонки Project
 

@@ -2239,15 +2239,6 @@ function postPlanComment(issue: IssueCommentEvent["issue"], plan: Plan): void {
 }
 
 function publishPlan(plan: Plan, issue: IssueCommentEvent["issue"], token: string): void {
-  for (const surface of plan.surfaces) {
-    ensureLabel(GOAL_REPO, surface, token);
-  }
-  if (plan.surfaces.length) {
-    gh(
-      ["issue", "edit", String(issue.number), "-R", GOAL_REPO, "--add-label", plan.surfaces.join(",")],
-      token,
-    );
-  }
   addToProject(issue.html_url, "In Progress", token);
   postPlanComment(issue, plan);
 }
@@ -2462,7 +2453,6 @@ async function handleGoalSyncMain(item: BoardIssue, plan: Plan, token: string): 
 }
 
 function cardFromIssue(item: BoardIssue): InventoryCard {
-  const fromLabel = item.labels.find((name) => isSurface(name));
   const kind: InventoryCard["kind"] =
     item.repo === GOAL_REPO ? "goal" : "child";
   return {
@@ -2471,7 +2461,6 @@ function cardFromIssue(item: BoardIssue): InventoryCard {
     number: item.number,
     title: item.title,
     url: item.url,
-    ...(fromLabel && isSurface(fromLabel) ? { surface: fromLabel } : {}),
   };
 }
 
