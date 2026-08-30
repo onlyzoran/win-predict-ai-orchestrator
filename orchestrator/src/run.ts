@@ -1075,9 +1075,10 @@ function ensureGoalProductLabel(issueNumber: number, productId: string, token: s
   );
 }
 
-function graphql<T>(token: string, query: string, variables: Record<string, string>): T {
+function graphql<T>(token: string, query: string, variables: Record<string, string | null | undefined>): T {
   const args = ["api", "graphql", "-f", `query=${query}`];
   for (const [key, value] of Object.entries(variables)) {
+    if (value == null || value === "") continue;
     args.push("-f", `${key}=${value}`);
   }
   const raw = gh(args, token);
@@ -1193,6 +1194,12 @@ function statusOptionId(status: StatusName, token: string, board: BoardProject):
   const id = ensureStatusOptions(token, board)[status] ?? boardStatusFallback(board)[status];
   if (!id) throw new Error(`нет option id для колонки ${status}`);
   return id;
+}
+
+function ensureAllBoardStatusOptions(token: string): void {
+  for (const board of listBoardProjects()) {
+    ensureStatusOptions(token, board);
+  }
 }
 
 function addToProject(url: string, status: StatusName, token: string, productId?: string): void {
@@ -3026,7 +3033,14 @@ async function watchBoard(): Promise<void> {
     console.log(`inventory ${INVENTORY_PATH}: ${inventory.active.length}/${inventory.slots}`);
     const token = writeToken();
     if (!token) throw new Error("нет секрета GITHUB_PAT");
-    ensureStatusOptions(token);
+    const boards = listBoardProjects();
+    const staleProjectId = process.env.ORCHESTRATOR_PROJECT_ID?.trim();
+    if (staleProjectId && !boards.some((board) => board.id === staleProjectId)) {
+      console.warn(`unset stale ORCHESTRATOR_PROJECT_ID=${staleProjectId}`);
+      delete process.env.ORCHESTRATOR_PROJECT_ID;
+    }
+    console.log(`project boards: ${boards.map((board) => board.id).join(", ")}`);
+    ensureAllBoardStatusOptions(token);
     const all = listProjectIssues(token);
     inventory.board = {
       inProgress: all.filter((item) => item.status === "In Progress" && !item.closed).map(cardFromIssue),
