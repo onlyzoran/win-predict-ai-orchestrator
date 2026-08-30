@@ -6,8 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Цель живёт только здесь. Карточка Inbox → In Progress (или комментарий `/orchestrate`) — оркестратор создаст child issues
-        в `ui` / `icons` / `data` / `app` / `admin` / `ios`. Правки после Review: комментарий в этот issue и карточка снова In Progress.
+        Цель живёт только здесь. Карточка Inbox → In Progress (или комментарий `/orchestrate`) — оркестратор создаст крупные child
+        (обычно одно на отмеченную поверхность) в `ui` / `icons` / `data` / `app` / `admin` / `ios`. Отмечай только нужные поверхности.
+        Правки после Review: комментарий в этот issue и карточка снова In Progress.
         Приёмка: комментарий «релизь» / «можно релизить» и карточка Review → In Progress (вотчер смержит и уведёт в Done).
   - type: textarea
     id: outcome

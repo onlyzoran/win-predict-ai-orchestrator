@@ -1,34 +1,45 @@
 {
   "goal_number": 1,
-  "summary": "Новая иконка турнира в пакете, затем использование в админке. UI-пакет не трогаем.",
+  "summary": "Кнопка в ui-пакете, затем app и admin; ios не в скоупе Goal — не планируем.",
   "status": "ready",
-  "surfaces": ["icons", "admin"],
+  "surfaces": ["ui", "app", "admin"],
   "human_gates": [
-    "выбор варианта иконки в PR win-predict-ai-icons",
+    "приёмка UX кнопки",
     "приёмка → In Progress + «релизь» (merge делает вотчер)"
   ],
   "tasks": [
     {
-      "id": "icons-tournament",
-      "surface": "icons",
-      "repo": "onlyzoran/win-predict-ai-icons",
-      "title": "Иконка турнира (3–4 варианта)",
-      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#1\n\nНужна outline-иконка турнира в стиле Tabler для админки.\n\nКритерий куска: выбран один вариант, PR готов к merge.\n",
+      "id": "ui-action-button",
+      "surface": "ui",
+      "repo": "onlyzoran/win-predict-ai-ui",
+      "title": "Кнопка действия в UI-пакете",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#1\n\nДобавить кнопку действия в shared Vue UI (компонент, стили, story при необходимости — один PR).\n\nКритерий куска: компонент экспортирован, Storybook/CI зелёные, PR готов к merge.\n",
       "depends_on": [],
       "parallel_group": 1,
-      "trigger": { "type": "slash", "command": "/new-icon" },
-      "done_when": "В PR выбран вариант, CI зелёный."
+      "trigger": { "type": "sdk" },
+      "done_when": "PR в win-predict-ai-ui зелёный, кнопка в пакете."
     },
     {
-      "id": "admin-use-icon",
+      "id": "app-use-button",
+      "surface": "app",
+      "repo": "onlyzoran/win-predict-ai",
+      "title": "Вставить кнопку на экран приложения",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#1\n\nПосле prerelease @onlyzoran/win-predict-ai-ui вставить кнопку на нужный экран.\nPrerelease/bump делает оркестратор — этот issue только про интеграцию в app.\n\nКритерий куска: кнопка видна в приложении, PR готов к merge.\n",
+      "depends_on": ["ui-action-button"],
+      "parallel_group": 2,
+      "trigger": { "type": "sdk" },
+      "done_when": "PR в win-predict-ai зелёный и показывает кнопку."
+    },
+    {
+      "id": "admin-use-button",
       "surface": "admin",
       "repo": "onlyzoran/win-predict-ai-admin",
-      "title": "Подключить иконку турнира после публикации пакета",
-      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#1\n\nПосле prerelease @onlyzoran/win-predict-ai-icons использовать новую иконку в UI турниров.\nPrerelease/bump делает оркестратор — этот issue только про интеграцию в admin.\n\nКритерий куска: иконка видна в админке, PR готов к merge.\n",
-      "depends_on": ["icons-tournament"],
+      "title": "Вставить кнопку в админку",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#1\n\nПосле prerelease @onlyzoran/win-predict-ai-ui вставить кнопку в нужный экран админки.\nPrerelease/bump делает оркестратор — этот issue только про интеграцию в admin.\n\nКритерий куска: кнопка видна в админке, PR готов к merge.\n",
+      "depends_on": ["ui-action-button"],
       "parallel_group": 2,
-      "trigger": { "type": "issue_only" },
-      "done_when": "PR в win-predict-ai-admin зелёный и показывает иконку."
+      "trigger": { "type": "sdk" },
+      "done_when": "PR в win-predict-ai-admin зелёный и показывает кнопку."
     }
   ]
 }
