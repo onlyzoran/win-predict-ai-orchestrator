@@ -37,7 +37,7 @@ Goal Issues — только в этом репо (это и есть карто
 
 ## Project
 
-Доска: [win-predict-ai](https://github.com/users/onlyzoran/projects/3) (приватная). Общая на все продукты; фильтр по лейблу продукта.
+Доска: [ai-engineering-autopilot](https://github.com/users/onlyzoran/projects/3) (приватная). Общая на все продукты; фильтр по лейблу продукта.
 
 Колонки: **Inbox** → **In Progress** → **Review** → **Done**. Карточки — только issue этого штаб-репо.
 

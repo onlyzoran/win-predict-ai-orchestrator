@@ -64,7 +64,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 
 ## Колонки Project
 
-Доска: [win-predict-ai](https://github.com/users/onlyzoran/projects/3).
+Доска: [ai-engineering-autopilot](https://github.com/users/onlyzoran/projects/3).
 
 | Колонка | Кто двигает | Значение |
 |---|---|---|
