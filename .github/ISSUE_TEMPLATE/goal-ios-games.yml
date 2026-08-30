@@ -1,0 +1,15 @@
+name: ios-games
+description: Цель для iOS-игр. Рабочие репо пока не подключены.
+labels: ["ios-games"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Продукт: **ios-games** (stub). Репо ещё не подключены — оркестратор не открывает PR.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Результат
+      description: Что должно быть правдой, когда цель закрыта.
+    validations:
+      required: true

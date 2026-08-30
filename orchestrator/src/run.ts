@@ -1021,7 +1021,7 @@ function ensureLabel(repo: string, name: Surface, token: string): void {
 const PRODUCT_LABEL_META: Record<string, { color: string; description: string }> = {
   "win-predict-ai": { color: "5319e7", description: "продукт win-predict-ai" },
   "telegram-bots": { color: "1d76db", description: "продукт telegram-bots (stub)" },
-  games: { color: "d93f0b", description: "продукт games (stub)" },
+  "ios-games": { color: "d93f0b", description: "продукт ios-games (stub)" },
 };
 
 function ensureProductLabel(productId: string, token: string): void {

@@ -6,6 +6,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const REGISTRY_PATH = join(ROOT, "orchestrator/products/registry.json");
 const DEFAULT_PRODUCT = "win-predict-ai";
 const LEGACY_PRODUCT_LABEL_RE = /^product:(.+)$/;
+/** Старые id/лейблы → текущий id в registry */
+const LEGACY_PRODUCT_IDS: Record<string, string> = {
+  games: "ios-games",
+};
 
 export type ProductStatus = "active" | "stub";
 
@@ -52,8 +56,14 @@ export function clearProductRegistryCache(): void {
 export function resolveProductId(labelNames: string[], registry = loadProductRegistry()): string {
   for (const name of labelNames) {
     if (registry[name]) return name;
+    const renamed = LEGACY_PRODUCT_IDS[name];
+    if (renamed && registry[renamed]) return renamed;
     const legacy = name.match(LEGACY_PRODUCT_LABEL_RE);
     if (legacy && registry[legacy[1]]) return legacy[1];
+    if (legacy) {
+      const renamedFromPrefix = LEGACY_PRODUCT_IDS[legacy[1]];
+      if (renamedFromPrefix && registry[renamedFromPrefix]) return renamedFromPrefix;
+    }
   }
   return DEFAULT_PRODUCT;
 }

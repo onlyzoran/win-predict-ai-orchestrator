@@ -41,9 +41,9 @@
     "label": "telegram-bots",
     "surfaces": {}
   },
-  "games": {
+  "ios-games": {
     "status": "stub",
-    "label": "games",
+    "label": "ios-games",
     "surfaces": {}
   }
 }

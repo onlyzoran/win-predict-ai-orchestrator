@@ -53,12 +53,18 @@ test("resolveProductId: без лейбла → win-predict-ai", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("resolveProductId: legacy games → ios-games", () => {
+  clearProductRegistryCache();
+  const registry = loadProductRegistry();
+  assert.equal(resolveProductId(["games"], registry), "ios-games");
+});
+
 test("stubNeedsHumanPlan", () => {
-  const plan = stubNeedsHumanPlan(42, "games");
+  const plan = stubNeedsHumanPlan(42, "ios-games");
   assert.equal(plan.status, "needs_human");
   assert.equal(plan.goal_number, 42);
   assert.equal(plan.tasks.length, 0);
-  assert.match(plan.summary, /games/);
+  assert.match(plan.summary, /ios-games/);
 });
 
 test("formatProductContext: active", () => {
@@ -79,5 +85,5 @@ test("loadProductRegistry: shipped file", () => {
   assert.equal(registry["win-predict-ai"]?.status, "active");
   assert.equal(registry["win-predict-ai"]?.label, "win-predict-ai");
   assert.equal(registry["telegram-bots"]?.status, "stub");
-  assert.equal(registry["games"]?.status, "stub");
+  assert.equal(registry["ios-games"]?.status, "stub");
 });

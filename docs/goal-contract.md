@@ -8,7 +8,7 @@ Goal — одна высокоуровневая цель **продукта**. 
 |---|---|---|
 | **win-predict-ai** | `win-predict-ai` | active — PR в ui/icons/data/app/admin/ios |
 | **telegram-bots** | `telegram-bots` | stub — Goal на доске, PR не открываются |
-| **games** | `games` | stub — Goal на доске, PR не открываются |
+| **ios-games** | `ios-games` | stub — Goal на доске, PR не открываются |
 
 Реестр: [orchestrator/products/registry.json](../orchestrator/products/registry.json). Без лейбла продукта оркестратор считает Goal продуктом `win-predict-ai` (старые карточки). Старый префикс `product:…` тоже понимается.
 
@@ -22,7 +22,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 
 - `…/issues/new?template=goal-win-predict-ai.yml`
 - `…/issues/new?template=goal-telegram-bots.yml`
-- `…/issues/new?template=goal-games.yml`
+- `…/issues/new?template=goal-ios-games.yml`
 
 Обязательно в форме:
 
@@ -32,7 +32,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 
 Лейбл продукта ставит шаблон. Любой issue в этом репо — Goal (лейбл `goal` не нужен). Поверхности, ограничения и критерии готовности менеджер выводит сам из Результата.
 
-**Stub-продукт** (bots/games): Inbox → In Progress → комментарий `needs_human`, карточка в Review, PR нет.
+**Stub-продукт** (bots/ios-games): Inbox → In Progress → комментарий `needs_human`, карточка в Review, PR нет.
 
 Старт (active): карточка Goal **Inbox → In Progress** (или комментарий `/orchestrate`). С нуля: `/orchestrate redo`.
 
@@ -58,7 +58,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 |---|---|---|
 | `win-predict-ai` | Goal (этот репо) | продукт win-predict |
 | `telegram-bots` | Goal | продукт bots (stub) |
-| `games` | Goal | продукт games (stub) |
+| `ios-games` | Goal | продукт ios-games (stub) |
 
 Поверхности (ui, app, admin, …) — только в плане в комментарии Goal, отдельные лейблы не ставятся.
 
