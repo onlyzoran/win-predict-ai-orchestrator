@@ -6,13 +6,13 @@ Goal — одна высокоуровневая цель **продукта**. 
 
 | Шаблон | Лейбл | Статус |
 |---|---|---|
-| **win-predict-ai** | `product:win-predict-ai` | active — PR в ui/icons/data/app/admin/ios |
-| **telegram-bots** | `product:telegram-bots` | stub — Goal на доске, child не создаются |
-| **games** | `product:games` | stub — Goal на доске, child не создаются |
+| **win-predict-ai** | `win-predict-ai` | active — PR в ui/icons/data/app/admin/ios |
+| **telegram-bots** | `telegram-bots` | stub — Goal на доске, PR не открываются |
+| **games** | `games` | stub — Goal на доске, PR не открываются |
 
-Реестр: [orchestrator/products/registry.json](../orchestrator/products/registry.json). Без лейбла `product:*` оркестратор считает Goal продуктом `win-predict-ai` (старые карточки).
+Реестр: [orchestrator/products/registry.json](../orchestrator/products/registry.json). Без лейбла продукта оркестратор считает Goal продуктом `win-predict-ai` (старые карточки). Старый префикс `product:…` тоже понимается.
 
-На доске фильтруй по `product:…`. Одна Project на все продукты.
+На доске фильтруй по лейблу продукта. Одна Project на все продукты.
 
 ## Создание
 
@@ -30,7 +30,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 |---|---|
 | Результат | Что должно быть правдой в конце |
 
-Лейбл `product:…` ставит шаблон. Любой issue в этом репо — Goal (лейбл `goal` не нужен). Поверхности, ограничения и критерии готовности менеджер выводит сам из Результата.
+Лейбл продукта ставит шаблон. Любой issue в этом репо — Goal (лейбл `goal` не нужен). Поверхности, ограничения и критерии готовности менеджер выводит сам из Результата.
 
 **Stub-продукт** (bots/games): Inbox → In Progress → комментарий `needs_human`, карточка в Review, PR нет.
 
@@ -56,9 +56,9 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 
 | Лейбл | Где | Смысл |
 |---|---|---|
-| `product:win-predict-ai` | Goal (этот репо) | продукт win-predict |
-| `product:telegram-bots` | Goal | продукт bots (stub) |
-| `product:games` | Goal | продукт games (stub) |
+| `win-predict-ai` | Goal (этот репо) | продукт win-predict |
+| `telegram-bots` | Goal | продукт bots (stub) |
+| `games` | Goal | продукт games (stub) |
 | `ui` | Goal | `win-predict-ai-ui` |
 | `icons` | Goal | `win-predict-ai-icons` |
 | `data` | Goal | `win-predict-ai-data` |

@@ -1,6 +1,6 @@
 name: win-predict-ai
 description: Цель для семьи win-predict-ai (ui / app / admin / ios / …).
-labels: ["product:win-predict-ai"]
+labels: ["win-predict-ai"]
 body:
   - type: markdown
     attributes:

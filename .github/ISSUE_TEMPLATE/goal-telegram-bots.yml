@@ -1,6 +1,6 @@
 name: telegram-bots
 description: Цель для telegram-ботов. Рабочие репо пока не подключены.
-labels: ["product:telegram-bots"]
+labels: ["telegram-bots"]
 body:
   - type: markdown
     attributes:

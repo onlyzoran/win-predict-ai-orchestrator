@@ -12,7 +12,7 @@
 | telegram-bots | Issues → **telegram-bots** | stub |
 | games | Issues → **games** | stub |
 
-Реестр: [orchestrator/products/registry.json](orchestrator/products/registry.json). Фильтр на доске: лейбл `product:…`.
+Реестр: [orchestrator/products/registry.json](orchestrator/products/registry.json). Фильтр на доске: лейбл продукта (`win-predict-ai`, …).
 
 Новый Goal: репо → **Issues** → **New issue** → шаблон продукта (не «Create new issue» с доски Project). Контракт: [docs/goal-contract.md](docs/goal-contract.md).
 
@@ -37,7 +37,7 @@ Goal Issues — только в этом репо (это и есть карто
 
 ## Project
 
-Доска: [win-predict-ai](https://github.com/users/onlyzoran/projects/3) (приватная). Общая на все продукты; фильтр по `product:…`.
+Доска: [win-predict-ai](https://github.com/users/onlyzoran/projects/3) (приватная). Общая на все продукты; фильтр по лейблу продукта.
 
 Колонки: **Inbox** → **In Progress** → **Review** → **Done**. Карточки — только issue этого штаб-репо.
 

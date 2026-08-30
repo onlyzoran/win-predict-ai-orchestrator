@@ -4,7 +4,7 @@
 
 Промпт UI/app/admin/data/ios-воркера — `orchestrator/prompts/worker.md` в этом репо. Ревьюер — `orchestrator/prompts/reviewer.md` (local, после PR). Slash `/new-icon` и прочие cloud-агенты живут в `onlyzoran/cursor-cloud-agents`. Не копируй их сюда и не меняй тот репо.
 
-Продукт задаётся лейблом `product:…` и блоком «Продукт Goal» в промпте (из `orchestrator/products/registry.json`). Без лейбла — `win-predict-ai`. Не планируй репо чужого продукта. Если status продукта `stub` — `needs_human`, пустой `tasks`.
+Продукт задаётся лейблом с id продукта (`win-predict-ai`, `telegram-bots`, `games`) и блоком «Продукт Goal» в промпте (из `orchestrator/products/registry.json`). Без лейбла — `win-predict-ai`. Не планируй репо чужого продукта. Если status продукта `stub` — `needs_human`, пустой `tasks`.
 
 ## Вход
 

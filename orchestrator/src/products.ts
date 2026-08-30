@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const REGISTRY_PATH = join(ROOT, "orchestrator/products/registry.json");
 const DEFAULT_PRODUCT = "win-predict-ai";
-const PRODUCT_LABEL_RE = /^product:(.+)$/;
+const LEGACY_PRODUCT_LABEL_RE = /^product:(.+)$/;
 
 export type ProductStatus = "active" | "stub";
 
@@ -33,8 +33,8 @@ export function loadProductRegistry(path = REGISTRY_PATH): ProductRegistry {
     if (!entry || (entry.status !== "active" && entry.status !== "stub")) {
       throw new Error(`registry: ${id}.status must be active|stub`);
     }
-    if (typeof entry.label !== "string" || !entry.label.startsWith("product:")) {
-      throw new Error(`registry: ${id}.label must be product:…`);
+    if (typeof entry.label !== "string" || entry.label !== id) {
+      throw new Error(`registry: ${id}.label must equal product id`);
     }
     if (!entry.surfaces || typeof entry.surfaces !== "object") {
       throw new Error(`registry: ${id}.surfaces`);
@@ -51,10 +51,9 @@ export function clearProductRegistryCache(): void {
 
 export function resolveProductId(labelNames: string[], registry = loadProductRegistry()): string {
   for (const name of labelNames) {
-    const match = name.match(PRODUCT_LABEL_RE);
-    if (!match) continue;
-    const id = match[1];
-    if (registry[id]) return id;
+    if (registry[name]) return name;
+    const legacy = name.match(LEGACY_PRODUCT_LABEL_RE);
+    if (legacy && registry[legacy[1]]) return legacy[1];
   }
   return DEFAULT_PRODUCT;
 }

@@ -1,7 +1,7 @@
 {
   "win-predict-ai": {
     "status": "active",
-    "label": "product:win-predict-ai",
+    "label": "win-predict-ai",
     "surfaces": {
       "ui": {
         "repo": "onlyzoran/win-predict-ai-ui",
@@ -38,12 +38,12 @@
   },
   "telegram-bots": {
     "status": "stub",
-    "label": "product:telegram-bots",
+    "label": "telegram-bots",
     "surfaces": {}
   },
   "games": {
     "status": "stub",
-    "label": "product:games",
+    "label": "games",
     "surfaces": {}
   }
 }

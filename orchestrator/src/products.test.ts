@@ -14,14 +14,14 @@ import {
 const sample = {
   "win-predict-ai": {
     status: "active",
-    label: "product:win-predict-ai",
+    label: "win-predict-ai",
     surfaces: {
       ui: { repo: "onlyzoran/win-predict-ai-ui", trigger: "sdk" },
     },
   },
   "telegram-bots": {
     status: "stub",
-    label: "product:telegram-bots",
+    label: "telegram-bots",
     surfaces: {},
   },
 };
@@ -31,7 +31,16 @@ test("resolveProductId: явный лейбл", () => {
   const path = join(dir, "registry.json");
   writeFileSync(path, JSON.stringify(sample));
   const registry = loadProductRegistry(path);
-  assert.equal(resolveProductId(["goal", "product:telegram-bots"], registry), "telegram-bots");
+  assert.equal(resolveProductId(["goal", "telegram-bots"], registry), "telegram-bots");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("resolveProductId: legacy product: prefix", () => {
+  const dir = mkdtempSync(join(tmpdir(), "products-"));
+  const path = join(dir, "registry.json");
+  writeFileSync(path, JSON.stringify(sample));
+  const registry = loadProductRegistry(path);
+  assert.equal(resolveProductId(["product:telegram-bots"], registry), "telegram-bots");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -68,6 +77,7 @@ test("loadProductRegistry: shipped file", () => {
   clearProductRegistryCache();
   const registry = loadProductRegistry();
   assert.equal(registry["win-predict-ai"]?.status, "active");
+  assert.equal(registry["win-predict-ai"]?.label, "win-predict-ai");
   assert.equal(registry["telegram-bots"]?.status, "stub");
   assert.equal(registry["games"]?.status, "stub");
 });

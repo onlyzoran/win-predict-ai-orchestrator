@@ -12,7 +12,7 @@ orchestrator/
   schema/plan.example.json
   schema/review.schema.json
   src/run.ts
-  src/products.ts            # лейбл product:* → registry
+  src/products.ts            # лейбл продукта → registry
   ops/cursor-worker.service  # systemd: My Machines worker
   ops/board-watch.timer      # systemd: In Progress (работа + релиз по фразе)
   prompts/design.md          # вкус и палитра для ui/app/admin
