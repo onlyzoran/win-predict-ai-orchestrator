@@ -42,6 +42,7 @@ import {
   setPackageLockRootVersion,
   stripPrerelease,
 } from "./release.js";
+import { goalQueueWaiting, pickGoalQueueHead } from "./goal-queue.js";
 import { goalRevisionPending } from "./goal-revision.js";
 import { shouldReleaseForBoardPhase } from "./release-intent.js";
 import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
@@ -3084,9 +3085,27 @@ async function watchBoard(): Promise<void> {
 
     const items = all.filter((item) => item.status === "In Progress" && !item.closed);
     const goals = items.filter((item) => isHqIssue(item.repo));
-    console.log(`watch: ${goals.length} goal in In Progress`);
-    for (const goal of goals) {
-      await handleGoalFromBoard(goal, token);
+    const queueInventory = readInventory();
+    const head = pickGoalQueueHead(goals, queueInventory);
+    const waiting = goalQueueWaiting(goals, head);
+    console.log(
+      `watch: ${goals.length} goal in In Progress, head #${head?.number ?? "none"}, waiting ${waiting.map((g) => g.number).join(", ") || "none"}`,
+    );
+
+    for (const goal of waiting) {
+      const comments = listIssueComments(goal.repo, goal.number, token);
+      const state = lastGoalDispatchState(comments);
+      if (!shouldReleaseFromBoard(state, comments)) continue;
+      if (state?.phase === "releasing" && isActivePhase(state, "releasing")) {
+        console.log(`queue release: skip goal #${goal.number}, already releasing`);
+        continue;
+      }
+      console.log(`queue release: goal #${goal.number} → releaser`);
+      await handleGoalRelease(goal, token);
+    }
+
+    if (head) {
+      await handleGoalFromBoard(head, token);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -3108,6 +3127,12 @@ async function commentDispatchFromStored(
   const notes = await dispatchPlan(stored, token, { skipIfOpenPr: true });
   const allSkipped = notes.length > 0 && notes.every(isIdleDispatchNote);
   if (allSkipped) {
+    await maybePromoteGoal(issue.number, token);
+    const fresh = listIssueComments(GOAL_REPO, issue.number, token);
+    if (lastGoalDispatchState(fresh)?.phase === "review") {
+      console.log(`goal #${issue.number}: idle workers → Review`);
+      return;
+    }
     commentOnGoal(
       issue.number,
       "Воркеры по этому плану уже запускались. Правка: комментарий в issue и карточку Review → In Progress. С нуля: `/orchestrate redo`.",
