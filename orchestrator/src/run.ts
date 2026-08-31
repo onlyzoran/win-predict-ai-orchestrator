@@ -41,6 +41,7 @@ import {
   setPackageLockRootVersion,
   stripPrerelease,
 } from "./release.js";
+import { goalRevisionPending } from "./goal-revision.js";
 import { shouldReleaseForBoardPhase } from "./release-intent.js";
 import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
 import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
@@ -2462,8 +2463,11 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
     await notifyTelegram(`Goal #${issue.number}: ${plan.status}\n${plan.summary}\n${issue.html_url}`);
     return;
   }
-  const why =
-    state?.phase === "review"
+  const humanNotesBeforeClaim = notesAfterLastReview(comments);
+  const revisionPending = Boolean(stored && goalRevisionPending(comments, humanNotesBeforeClaim));
+  const why = revisionPending
+    ? "правка после Review"
+    : state?.phase === "review"
       ? "правка после Review"
       : stored
         ? "догоняю воркеров"
@@ -2485,7 +2489,8 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
     await handleGoalSyncMain(item, stored, token);
     return;
   }
-  if (state?.phase === "review" && stored && humanNotes) {
+  if (stored && goalRevisionPending(fresh, humanNotes)) {
+    console.log(`goal #${item.number}: revision after Review feedback`);
     await runGoalRevision(issue, stored, humanNotes, token);
     return;
   }
