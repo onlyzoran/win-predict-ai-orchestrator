@@ -43,6 +43,7 @@ import {
   stripPrerelease,
 } from "./release.js";
 import { goalQueueWaiting, pickGoalQueueHead } from "./goal-queue.js";
+import { IDLE_DISPATCH_HINT, recentlyIdleDispatchNotified, taskOpenPrNeedsReview } from "./goal-idle.js";
 import { goalRevisionPending } from "./goal-revision.js";
 import { shouldReleaseForBoardPhase } from "./release-intent.js";
 import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
@@ -1506,6 +1507,69 @@ function countReviewChangesForTask(comments: IssueComment[], taskId: string): nu
   }).length;
 }
 
+function taskNeedsLocalReview(
+  task: Task,
+  goalNumber: number,
+  comments: IssueComment[],
+  token: string,
+): OpenPr[] | undefined {
+  const progress = taskProgress(task, goalNumber, token);
+  if (!progress || progress.closed) return undefined;
+  const state = lastDispatchStateForTask(comments, task.id);
+  const open = findOpenPrsForGoalTask(goalNumber, task.id, task.repo, token);
+  if (
+    !taskOpenPrNeedsReview(
+      state
+        ? { phase: state.phase, reviewVerdict: state.reviewVerdict, reviewingActive: isActiveReviewing(state) }
+        : undefined,
+      open.length > 0,
+      false,
+    )
+  ) {
+    return undefined;
+  }
+  return open;
+}
+
+/** Open PR exists but reviewer never finished (e.g. worker error after opening PR). */
+async function maybeReviewOpenPrsWithoutVerdict(plan: Plan, token: string): Promise<boolean> {
+  const comments = listIssueComments(GOAL_REPO, plan.goal_number, token);
+  let reviewed = false;
+  for (const task of plan.tasks) {
+    const open = taskNeedsLocalReview(task, plan.goal_number, comments, token);
+    if (!open) continue;
+    const state = lastDispatchStateForTask(comments, task.id);
+    await settleWithReviewer(task, plan.goal_number, token, {
+      prUrls: open.map((p) => p.url),
+      source: "PR открыт, ревью не завершено — local reviewer.",
+      agentId: state?.agentId,
+      runId: state?.runId,
+      headRef: state?.headRef ?? open[0]?.headRefName,
+    });
+    reviewed = true;
+  }
+  return reviewed;
+}
+
+async function finishIdleGoalDispatch(goalNumber: number, comments: IssueComment[], token: string): Promise<boolean> {
+  const plan = extractStoredPlan(comments, goalNumber);
+  if (!plan || plan.status !== "ready") return false;
+  await maybeReviewOpenPrsWithoutVerdict(plan, token);
+  await maybePromoteGoal(goalNumber, token);
+  const fresh = listIssueComments(GOAL_REPO, goalNumber, token);
+  if (lastGoalDispatchState(fresh)?.phase === "review") {
+    console.log(`goal #${goalNumber}: idle workers → Review`);
+    return true;
+  }
+  if (recentlyIdleDispatchNotified(fresh, DISPATCH_MARKER)) {
+    console.log(`goal #${goalNumber}: idle, skip duplicate notify`);
+    return false;
+  }
+  commentOnGoal(goalNumber, IDLE_DISPATCH_HINT);
+  await notifyTelegram(`Goal #${goalNumber}: уже запускали\n${goalUrl(goalNumber)}`);
+  return false;
+}
+
 async function maybePromoteGoal(goalNumber: number, token: string): Promise<void> {
   const comments = listIssueComments(GOAL_REPO, goalNumber, token);
   if (lastGoalDispatchState(comments)?.phase === "review") return;
@@ -2276,6 +2340,7 @@ async function catchUpGoalByNumber(goalNumber: number, token: string): Promise<v
   const notes = await dispatchPlan(plan, token, { skipIfOpenPr: true });
   const shouldReport = notes.some((n) => !isIdleDispatchNote(n));
   if (!shouldReport) {
+    if (await finishIdleGoalDispatch(goalNumber, comments, token)) return;
     console.log(`catch-up Goal #${goalNumber}: nothing to start`);
     return;
   }
@@ -2451,6 +2516,11 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   }
   if (state?.phase === "error" && !notesAfterLastPhase(comments, "error")) {
     console.log(`skip goal #${item.number}: error, try catch-up`);
+    const plan = extractStoredPlan(comments, item.number);
+    if (plan && (await maybeReviewOpenPrsWithoutVerdict(plan, token))) {
+      await maybePromoteGoal(item.number, token);
+      return;
+    }
     await catchUpGoalByNumber(item.number, token);
     return;
   }
@@ -3127,17 +3197,7 @@ async function commentDispatchFromStored(
   const notes = await dispatchPlan(stored, token, { skipIfOpenPr: true });
   const allSkipped = notes.length > 0 && notes.every(isIdleDispatchNote);
   if (allSkipped) {
-    await maybePromoteGoal(issue.number, token);
-    const fresh = listIssueComments(GOAL_REPO, issue.number, token);
-    if (lastGoalDispatchState(fresh)?.phase === "review") {
-      console.log(`goal #${issue.number}: idle workers → Review`);
-      return;
-    }
-    commentOnGoal(
-      issue.number,
-      "Воркеры по этому плану уже запускались. Правка: комментарий в issue и карточку Review → In Progress. С нуля: `/orchestrate redo`.",
-    );
-    await notifyTelegram(`Goal #${issue.number}: уже запускали\n${issue.html_url}`);
+    await finishIdleGoalDispatch(issue.number, listIssueComments(GOAL_REPO, issue.number, token), token);
     return;
   }
   if (!(await commentDispatch(issue.number, issue.html_url, notes, token))) process.exitCode = 2;
