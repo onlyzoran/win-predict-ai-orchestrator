@@ -18,6 +18,7 @@ import {
   resolveBoardProject,
   resolveProductId,
   stubNeedsHumanPlan,
+  taskMatchesProduct,
   type BoardProject,
 } from "./products.js";
 import {
@@ -93,8 +94,9 @@ const REPOS = [
   "onlyzoran/win-predict-ai",
   "onlyzoran/win-predict-ai-admin",
   "onlyzoran/win-predict-ai-ios",
+  "onlyzoran/shoppable-feed",
 ] as const;
-const SURFACES = ["ui", "icons", "data", "app", "admin", "ios"] as const;
+const SURFACES = ["ui", "icons", "data", "app", "admin", "ios", "feed"] as const;
 const LABEL_META: Record<(typeof SURFACES)[number], { color: string; description: string }> = {
   ui: { color: "1d76db", description: "win-predict-ai-ui" },
   icons: { color: "fbca04", description: "win-predict-ai-icons" },
@@ -102,6 +104,7 @@ const LABEL_META: Record<(typeof SURFACES)[number], { color: string; description
   app: { color: "d93f0b", description: "win-predict-ai" },
   admin: { color: "5319e7", description: "win-predict-ai-admin" },
   ios: { color: "e99695", description: "win-predict-ai-ios" },
+  feed: { color: "006b75", description: "shoppable-feed" },
 };
 const REPO_SURFACE: Record<(typeof REPOS)[number], Surface> = {
   "onlyzoran/win-predict-ai-ui": "ui",
@@ -110,6 +113,7 @@ const REPO_SURFACE: Record<(typeof REPOS)[number], Surface> = {
   "onlyzoran/win-predict-ai": "app",
   "onlyzoran/win-predict-ai-admin": "admin",
   "onlyzoran/win-predict-ai-ios": "ios",
+  "onlyzoran/shoppable-feed": "feed",
 };
 
 type Surface = (typeof SURFACES)[number];
@@ -946,7 +950,7 @@ function isRepo(value: unknown): value is Task["repo"] {
   return typeof value === "string" && (REPOS as readonly string[]).includes(value);
 }
 
-function validatePlan(raw: unknown, goalNumber: number): Plan {
+function validatePlan(raw: unknown, goalNumber: number, productId?: string): Plan {
   if (!raw || typeof raw !== "object") throw new Error("план не объект");
   const p = raw as Record<string, unknown>;
   const status = p.status;
@@ -970,6 +974,9 @@ function validatePlan(raw: unknown, goalNumber: number): Plan {
     }
     if (!isSurface(t.surface) || !isRepo(t.repo)) {
       throw new Error(`task[${index}] surface/repo`);
+    }
+    if (productId && !taskMatchesProduct(productId, t.surface, t.repo)) {
+      throw new Error(`task[${index}] не из продукта ${productId}`);
     }
     if (typeof t.title !== "string" || !t.title.trim()) throw new Error(`task[${index}].title`);
     if (typeof t.body !== "string" || !t.body.trim()) throw new Error(`task[${index}].body`);
@@ -1049,6 +1056,7 @@ const PRODUCT_LABEL_META: Record<string, { color: string; description: string }>
   "win-predict-ai": { color: "5319e7", description: "продукт win-predict-ai" },
   "telegram-bots": { color: "1d76db", description: "продукт telegram-bots (stub)" },
   "ios-games": { color: "d93f0b", description: "продукт ios-games (stub)" },
+  "shoppable-feed": { color: "006b75", description: "продукт shoppable-feed" },
 };
 
 function ensureProductLabel(productId: string, token: string): void {
@@ -1353,10 +1361,11 @@ function isNewIconTask(task: Task): task is Task & { trigger: { type: "slash"; c
 }
 
 function isVisualTask(task: Task, notes = ""): boolean {
+  const winPredictVisual =
+    (task.surface === "ui" || task.surface === "app" || task.surface === "admin") &&
+    task.repo.startsWith("onlyzoran/win-predict-ai");
   return (
-    task.surface === "ui" ||
-    task.surface === "app" ||
-    task.surface === "admin" ||
+    winPredictVisual ||
     /цвет|палитр|theme|токен|dark|light|контраст/i.test(`${task.title}\n${task.body}\n${notes}`)
   );
 }
@@ -2233,7 +2242,7 @@ async function decompose(issue: IssueCommentEvent["issue"], extra = ""): Promise
   if (result.status !== "finished") {
     throw new Error(runFailureMessage(result));
   }
-  return validatePlan(extractJson(result.result ?? ""), issue.number);
+  return validatePlan(extractJson(result.result ?? ""), issue.number, productId);
 }
 
 function loadEvent(): IssueCommentEvent {

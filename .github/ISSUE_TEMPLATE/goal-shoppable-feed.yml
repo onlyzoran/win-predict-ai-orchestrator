@@ -1,0 +1,16 @@
+name: shoppable-feed
+description: Цель для shoppable-feed (лента товаров).
+labels: ["shoppable-feed"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Продукт: **shoppable-feed**. Inbox → In Progress — менеджер откроет PR в `onlyzoran/shoppable-feed`.
+        Правки: комментарий + Review → In Progress. Приёмка: «релизь» + Review → In Progress.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Результат
+      description: Что должно быть правдой, когда цель закрыта.
+    validations:
+      required: true

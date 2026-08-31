@@ -1,6 +1,6 @@
 # win-predict-ai-orchestrator
 
-Штаб продуктов: цели, GitHub Project и оркестратор. Сейчас **active** — семья **win-predict-ai**; **telegram-bots** и **ios-games** — stub. Одна Goal на доске — несколько PR в рабочих репо.
+Штаб продуктов: цели, GitHub Project и оркестратор. Сейчас **active** — **win-predict-ai** и **shoppable-feed**; **telegram-bots** и **ios-games** — stub. Одна Goal на доске — несколько PR в рабочих репо.
 
 Промпты и конфиги cloud-агентов здесь **не** хранятся — они живут в [`cursor-cloud-agents`](https://github.com/onlyzoran/cursor-cloud-agents).
 
@@ -9,6 +9,7 @@
 | Продукт | Шаблон Issue | Статус |
 |---|---|---|
 | win-predict-ai | Issues → **win-predict-ai** | active |
+| shoppable-feed | Issues → **shoppable-feed** | active |
 | telegram-bots | Issues → **telegram-bots** | stub |
 | ios-games | Issues → **ios-games** | stub |
 
@@ -27,7 +28,13 @@
 | [`win-predict-ai-admin`](https://github.com/onlyzoran/win-predict-ai-admin) | потребитель (admin) |
 | [`win-predict-ai-ios`](https://github.com/onlyzoran/win-predict-ai-ios) | нативное iOS (SwiftUI, My Machines `worker.md`) |
 
-Goal Issues — только в этом репо (это и есть карточки на доске). PR — в таблице выше.
+## Рабочие репозитории (shoppable-feed)
+
+| Репо | Роль |
+|---|---|
+| [`shoppable-feed`](https://github.com/onlyzoran/shoppable-feed) | лента товаров (единственный репо) |
+
+Goal Issues — только в этом репо (это и есть карточки на доске). PR — в таблицах выше.
 
 Старт: карточка **Inbox → In Progress** (запасной путь — `/orchestrate`). Правки: комментарий в issue и **Review → In Progress**. Без комментария тот же переход — вотчер подтягивает `main` в PR (при конфликте — воркер MODE B). Приёмка: комментарий вроде «релизь» / «можно релизить» и **Review → In Progress** (вотчер смержит и уведёт в Done).
 

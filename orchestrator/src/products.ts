@@ -135,6 +135,17 @@ export function stubNeedsHumanPlan(goalNumber: number, productId: string): {
   };
 }
 
+/** Task surface+repo must belong to the Goal product. */
+export function taskMatchesProduct(
+  productId: string,
+  surface: string,
+  repo: string,
+  registry = loadProductRegistry(),
+): boolean {
+  const meta = getProduct(productId, registry).surfaces[surface];
+  return Boolean(meta && meta.repo === repo);
+}
+
 /** Markdown table for manager prompt: allowed surfaces for this product. */
 export function formatProductContext(productId: string, registry = loadProductRegistry()): string {
   const entry = getProduct(productId, registry);

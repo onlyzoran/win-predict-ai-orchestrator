@@ -55,5 +55,16 @@
     "status": "stub",
     "label": "ios-games",
     "surfaces": {}
+  },
+  "shoppable-feed": {
+    "status": "active",
+    "label": "shoppable-feed",
+    "surfaces": {
+      "feed": {
+        "repo": "onlyzoran/shoppable-feed",
+        "trigger": "sdk",
+        "description": "лента товаров (единственный репо продукта)"
+      }
+    }
   }
 }

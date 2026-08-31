@@ -12,6 +12,7 @@ import {
   resolveBoardProject,
   resolveProductId,
   stubNeedsHumanPlan,
+  taskMatchesProduct,
 } from "./products.js";
 
 const sampleBoard = {
@@ -97,12 +98,22 @@ test("loadProductRegistry: shipped file", () => {
   assert.equal(registry["win-predict-ai"]?.board?.id, "PVT_kwHOAom_KM4BgVLq");
   assert.equal(registry["telegram-bots"]?.status, "stub");
   assert.equal(registry["ios-games"]?.status, "stub");
+  assert.equal(registry["shoppable-feed"]?.status, "active");
+  assert.equal(registry["shoppable-feed"]?.surfaces.feed?.repo, "onlyzoran/shoppable-feed");
 });
 
 test("getBoardProject: stub inherits win-predict-ai board", () => {
   clearProductRegistryCache();
   const registry = loadProductRegistry();
   assert.equal(getBoardProject("telegram-bots", registry).id, registry["win-predict-ai"]?.board?.id);
+  assert.equal(getBoardProject("shoppable-feed", registry).id, registry["win-predict-ai"]?.board?.id);
+});
+
+test("taskMatchesProduct", () => {
+  clearProductRegistryCache();
+  assert.equal(taskMatchesProduct("shoppable-feed", "feed", "onlyzoran/shoppable-feed"), true);
+  assert.equal(taskMatchesProduct("shoppable-feed", "app", "onlyzoran/win-predict-ai"), false);
+  assert.equal(taskMatchesProduct("win-predict-ai", "app", "onlyzoran/win-predict-ai"), true);
 });
 
 test("listBoardProjects: unique boards", () => {

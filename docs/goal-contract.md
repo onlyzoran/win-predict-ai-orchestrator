@@ -1,12 +1,13 @@
 # Контракт Goal Issue
 
-Goal — одна высокоуровневая цель **продукта**. Живёт в этом штаб-репо. На доске одна карточка; оркестратор открывает **несколько PR** в рабочих репо (пока active — win-predict-ai). Child issues не создаются.
+Goal — одна высокоуровневая цель **продукта**. Живёт в этом штаб-репо. На доске одна карточка; оркестратор открывает **несколько PR** в рабочих репо (active — win-predict-ai и shoppable-feed). Child issues не создаются.
 
 ## Продукты
 
 | Шаблон | Лейбл | Статус |
 |---|---|---|
 | **win-predict-ai** | `win-predict-ai` | active — PR в ui/icons/data/app/admin/ios |
+| **shoppable-feed** | `shoppable-feed` | active — PR в `onlyzoran/shoppable-feed` |
 | **telegram-bots** | `telegram-bots` | stub — Goal на доске, PR не открываются |
 | **ios-games** | `ios-games` | stub — Goal на доске, PR не открываются |
 
@@ -21,6 +22,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 Не с доски Project → Create new issue: там шаблон не подставляется. Либо:
 
 - `…/issues/new?template=goal-win-predict-ai.yml`
+- `…/issues/new?template=goal-shoppable-feed.yml`
 - `…/issues/new?template=goal-telegram-bots.yml`
 - `…/issues/new?template=goal-ios-games.yml`
 
@@ -57,6 +59,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 | Лейбл | Где | Смысл |
 |---|---|---|
 | `win-predict-ai` | Goal (этот репо) | продукт win-predict |
+| `shoppable-feed` | Goal | продукт shoppable-feed |
 | `telegram-bots` | Goal | продукт bots (stub) |
 | `ios-games` | Goal | продукт ios-games (stub) |
 

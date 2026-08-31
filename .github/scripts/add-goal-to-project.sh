@@ -11,7 +11,7 @@ PROJECT_NUMBER="${6:-3}"
 
 labels_csv="${LABELS:-}"
 case ",${labels_csv}," in
-  *,win-predict-ai,* | *,telegram-bots,* | *,ios-games,*)
+  *,win-predict-ai,* | *,telegram-bots,* | *,ios-games,* | *,shoppable-feed,*)
     ;;
   *)
     echo "skip: no product label (${labels_csv})"
