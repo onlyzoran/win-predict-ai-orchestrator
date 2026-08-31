@@ -13,11 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Fetch secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.16
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          domain: https://secrets.win-predict-ai.com
+          project-slug: win-predict-ai-s-vm-f
+          env-slug: prod
+          export-type: env
       - name: Add Goal to ai-engineering-autopilot (Inbox)
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Default GITHUB_TOKEN cannot read user-owned Project V2; need PAT with `project`.
+          GH_TOKEN: ${{ env.GITHUB_PAT }}
           LABELS: ${{ join(github.event.issue.labels.*.name, ',') }}
         run: |
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "GITHUB_PAT missing from Infisical prod — cannot add to Project board"
+            exit 1
+          fi
           chmod +x .github/scripts/add-goal-to-project.sh
           .github/scripts/add-goal-to-project.sh \
             "${{ github.event.issue.html_url }}" \
