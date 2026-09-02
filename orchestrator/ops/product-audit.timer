@@ -1,0 +1,12 @@
+[Unit]
+Description=Run product-audit weekly (Monday 06:00, after previous run finishes)
+
+[Timer]
+OnBootSec=30min
+OnCalendar=Mon *-*-* 06:00:00
+AccuracySec=15min
+Persistent=true
+Unit=product-audit.service
+
+[Install]
+WantedBy=timers.target

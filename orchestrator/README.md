@@ -8,15 +8,21 @@ orchestrator/
   prompts/manager.md
   prompts/worker.md          # исполнитель ui/app/admin/data/ios на My Machines
   prompts/reviewer.md        # local: вердикт по PR до колонки Review
+  prompts/auditor.md         # product-audit: visual prod walk → draft Goals
   schema/plan.schema.json
   schema/plan.example.json
   schema/review.schema.json
+  schema/audit.schema.json
+  config/audit-routes.json   # маршруты product-audit по productId
   src/run.ts
+  src/audit-run.ts           # CLI product-audit
+  src/product-audit.ts       # routes, validate, Goal body, browser block
   src/visual-review.ts       # browser review: preview poll + Playwright MCP
   src/publisher-loop.ts      # ui/icons: publish → bump app/admin, фазы в Goal
   src/products.ts            # лейбл продукта → registry
   ops/cursor-worker.service  # systemd: My Machines worker
   ops/board-watch.timer      # systemd: In Progress (работа + релиз по фразе)
+  ops/product-audit.timer    # systemd: weekly visual prod audit → Inbox Goals
   prompts/design.md          # вкус и палитра для ui/app/admin
 ```
 
@@ -69,3 +75,4 @@ orchestrator/
 | review | local `Agent.prompt` (`reviewer.md`) по PR; ui/app/admin/sales + demo → Playwright MCP; pass/blocked → Review, changes → воркер MODE B |
 | publish | publisher loop: ui/icons PR → npm prerelease → bump app/admin; state в Goal; catch-up повторяет при ошибке / новом commit |
 | watch | systemd timer на VPS: In Progress → оркестратор/воркер; после PR ui/icons → prerelease + bump app/admin; In Progress + фраза про релиз → bump версии + ченджлог + merge (+ publish/promote для библиотек) → Done |
+| product-audit | CLI `npm run audit` + weekly timer: Playwright MCP по prod URL → draft Goal Issues в Inbox (label `product-audit`); human gate — In Progress вручную |

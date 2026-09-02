@@ -1,0 +1,25 @@
+{
+  "win-predict-ai": {
+    "productLabel": "win-predict-ai",
+    "routes": [
+      {
+        "id": "app-home",
+        "url": "https://win-predict-ai.com/",
+        "surface": "app",
+        "checks": ["layout", "theme-light", "theme-dark", "readability"]
+      },
+      {
+        "id": "app-predictions",
+        "url": "https://win-predict-ai.com/predictions",
+        "surface": "app",
+        "checks": ["layout", "table-density", "readability"]
+      },
+      {
+        "id": "ui-storybook",
+        "url": "https://onlyzoran.github.io/win-predict-ai-ui/",
+        "surface": "ui",
+        "checks": ["palette", "dark-mode", "chart-contrast"]
+      }
+    ]
+  }
+}

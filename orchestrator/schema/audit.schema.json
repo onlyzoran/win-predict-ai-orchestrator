@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/onlyzoran/win-predict-ai-orchestrator/orchestrator/schema/audit.schema.json",
+  "title": "OrchestratorProductAudit",
+  "description": "Ответ visual product-audit: findings для draft Goal Issues.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["product_id", "summary", "findings"],
+  "properties": {
+    "product_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Id продукта из registry / audit-routes."
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Коротко на русском: общий итог прогона."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "surface", "title", "result", "evidence"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Стабильный id finding внутри прогона."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "surface": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Поверхность продукта: ui, app, admin, …"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Короткий заголовок для Goal."
+          },
+          "result": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Текст для поля «Результат» Goal."
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "description": "URL + что видно на экране."
+          }
+        }
+      }
+    }
+  }
+}

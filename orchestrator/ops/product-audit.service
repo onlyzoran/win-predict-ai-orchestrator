@@ -1,0 +1,20 @@
+[Unit]
+Description=win-predict product audit (visual prod walk)
+After=network-online.target cursor-worker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cursor-worker
+Group=cursor-worker
+WorkingDirectory=/opt/cursor-workers/win-predict-ai-orchestrator
+EnvironmentFile=-/etc/cursor-worker.env
+Environment=HOME=/opt/cursor-workers
+Environment=PATH=/opt/cursor-workers/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CURSOR_MACHINE_NAME=win-predict-vps
+NoNewPrivileges=true
+TimeoutStartSec=120min
+ExecStart=/opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/product-audit.sh
+
+[Install]
+WantedBy=multi-user.target

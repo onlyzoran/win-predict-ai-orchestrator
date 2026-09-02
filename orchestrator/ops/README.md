@@ -79,6 +79,40 @@ sudo -u cursor-worker bash -lc 'cd /opt/cursor-workers/win-predict-ai-orchestrat
 
 Отключить browser review без деплоя: `ORCHESTRATOR_BROWSER_REVIEW=0` в `/etc/cursor-worker.env`.
 
+### Product-audit (weekly visual prod walk)
+
+Отдельный timer — не в `board-watch`: прогон долгий и не блокирует очередь Goal. Агент (`auditor.md`) обходит prod URL из `orchestrator/config/audit-routes.json` через Playwright MCP и создаёт **draft Goal** в **Inbox** (label `product-audit` + лейбл продукта). Оркестратор не стартует, пока человек не переведёт карточку в In Progress.
+
+Перед первым прогоном создай лейбл `product-audit` в штаб-репо (если ещё нет).
+
+```bash
+# Ручной прогон (dry-run — без issues)
+ORCHESTRATOR_AUDIT_DRY_RUN=1 npm run audit -- win-predict-ai
+
+# Боевой прогон
+npm run audit -- win-predict-ai
+```
+
+Env (в `/etc/cursor-worker.env`):
+
+| Переменная | Default | Смысл |
+|---|---|---|
+| `ORCHESTRATOR_AUDIT_ENABLED` | `1` | `0` — no-op |
+| `ORCHESTRATOR_AUDIT_MIN_SEVERITY` | `medium` | порог создания Goal (`low`/`medium`/`high`) |
+| `ORCHESTRATOR_AUDIT_DRY_RUN` | — | `1` — только отчёт, без issues |
+
+Поставить weekly timer (от root, после `git pull`):
+
+```bash
+chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/product-audit.sh
+install -m 644 /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/product-audit.service /etc/systemd/system/
+install -m 644 /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/product-audit.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now product-audit.timer
+systemctl start product-audit.service   # разовый прогон
+journalctl -u product-audit.service -n 80 --no-pager
+```
+
 Инвентарь слота (кто занял машину): `/opt/cursor-workers/data/inventory.json`. Файл появляется на тике вотчера (даже если слот свободен). При смене слота снимок уходит в Telegram (`слот 1/1` / `свободно`).
 
 ## HQ (внешний pitch)

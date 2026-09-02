@@ -67,8 +67,23 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 | `gift-sales` | Goal | продукт gift-sales |
 | `telegram-bots` | Goal | продукт bots (stub) |
 | `ios-games` | Goal | продукт ios-games |
+| `product-audit` | Goal (этот репо) | автоматически создан product-audit; фильтр на доске |
 
 Поверхности (ui, app, admin, …) — только в плане в комментарии Goal, отдельные лейблы не ставятся.
+
+## Product audit
+
+Visual product-audit (`npm run audit` на VPS, timer `product-audit.timer`) обходит **prod** URL из [orchestrator/config/audit-routes.json](../orchestrator/config/audit-routes.json), находит UX/визуальные улучшения и создаёт **draft Goal** в **Inbox**:
+
+- заголовок `[audit] …`, лейблы `product-audit` + продукт (`win-predict-ai`, …);
+- в теле — поле «Результат» и маркер `<!-- product-audit:fingerprint=… -->` для дедупликации;
+- severity `medium`/`high` → issue; `low` — только в Telegram-отчёте.
+
+**Human gate:** оркестратор не берёт карточку, пока человек не переведёт её **Inbox → In Progress**. Дальше — обычный менеджер и воркеры.
+
+MVP: только win-predict-ai (app + ui Storybook). Admin и другие продукты — позже через расширение `audit-routes.json`.
+
+Отключить: `ORCHESTRATOR_AUDIT_ENABLED=0`. Dry-run: `ORCHESTRATOR_AUDIT_DRY_RUN=1`.
 
 ## Колонки Project
 
