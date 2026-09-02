@@ -62,6 +62,30 @@ function hadGoalReviewAcceptance(comments: GoalComment[]): boolean {
   });
 }
 
+function lastPlanCommentIndex(comments: GoalComment[]): number {
+  let lastPlan = -1;
+  comments.forEach((comment, index) => {
+    if (comment.body.includes(PLAN_MARKER)) lastPlan = index;
+  });
+  return lastPlan;
+}
+
+function lastTaskDispatchIndex(comments: GoalComment[], taskId: string): number {
+  let last = -1;
+  comments.forEach((comment, index) => {
+    if (!comment.body.includes(DISPATCH_MARKER)) return;
+    const match = comment.body.match(STATE_RE);
+    if (!match) return;
+    try {
+      const raw = JSON.parse(match[1]) as { taskId?: string };
+      if (raw.taskId === taskId) last = index;
+    } catch {
+      /* ignore */
+    }
+  });
+  return last;
+}
+
 /** Есть необработанные комментарии человека после последней приёмки в Review. */
 export function goalRevisionPending(comments: GoalComment[], humanNotes: string): boolean {
   if (!hadGoalReviewAcceptance(comments)) return false;
@@ -69,4 +93,14 @@ export function goalRevisionPending(comments: GoalComment[], humanNotes: string)
   const lastHuman = lastHumanNoteIndexAfterReview(comments);
   if (lastHuman < 0) return false;
   return !comments.slice(lastHuman + 1).some((comment) => comment.body.includes(PLAN_MARKER));
+}
+
+/** План пересобран после правок, но воркер ещё не сдал кусок заново (нет task dispatch после плана). */
+export function goalRevisionFollowUpPending(comments: GoalComment[], taskIds: string[]): boolean {
+  if (!hadGoalReviewAcceptance(comments)) return false;
+  const lastHuman = lastHumanNoteIndexAfterReview(comments);
+  if (lastHuman < 0) return false;
+  const lastPlan = lastPlanCommentIndex(comments);
+  if (lastPlan <= lastHuman) return false;
+  return taskIds.some((taskId) => lastTaskDispatchIndex(comments, taskId) < lastPlan);
 }

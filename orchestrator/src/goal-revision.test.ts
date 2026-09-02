@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DISPATCH_MARKER, goalRevisionPending, PLAN_MARKER } from "./goal-revision.js";
+import {
+  DISPATCH_MARKER,
+  goalRevisionFollowUpPending,
+  goalRevisionPending,
+  PLAN_MARKER,
+} from "./goal-revision.js";
 
 const reviewAcceptance = `${DISPATCH_MARKER}
 <!-- orchestrator-state:{"phase":"review","at":"2026-01-01T00:00:00.000Z"} -->
@@ -45,5 +50,36 @@ describe("goalRevisionPending", () => {
       { body: workingDone, user: { login: "github-actions[bot]" } },
     ];
     assert.equal(goalRevisionPending(comments, ""), false);
+  });
+});
+
+const taskReviewPass = `${DISPATCH_MARKER}
+<!-- orchestrator-state:{"phase":"review","taskId":"sales-price-comparison-ui","reviewVerdict":"pass","at":"2026-01-01T00:02:00.000Z"} -->
+review pass`;
+
+describe("goalRevisionFollowUpPending", () => {
+  it("true when plan republished but task not redispatched", () => {
+    const comments = [
+      { body: reviewAcceptance, user: { login: "onlyzoran" } },
+      { body: taskReviewPass, user: { login: "onlyzoran" } },
+      { body: "нет ui на preview", user: { login: "onlyzoran" } },
+      { body: planComment, user: { login: "onlyzoran" } },
+    ];
+    assert.equal(goalRevisionFollowUpPending(comments, ["sales-price-comparison-ui"]), true);
+  });
+
+  it("false when task dispatch after replan", () => {
+    const comments = [
+      { body: reviewAcceptance, user: { login: "onlyzoran" } },
+      { body: "нет ui на preview", user: { login: "onlyzoran" } },
+      { body: planComment, user: { login: "onlyzoran" } },
+      {
+        body: `${DISPATCH_MARKER}
+<!-- orchestrator-state:{"phase":"review","taskId":"sales-price-comparison-ui","reviewVerdict":"pass","at":"2026-01-01T00:05:00.000Z"} -->
+pass after fix`,
+        user: { login: "onlyzoran" },
+      },
+    ];
+    assert.equal(goalRevisionFollowUpPending(comments, ["sales-price-comparison-ui"]), false);
   });
 });

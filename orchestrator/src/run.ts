@@ -68,7 +68,7 @@ import {
   playwrightMcpServers,
   waitForPreviewUrls,
 } from "./visual-review.js";
-import { goalRevisionPending } from "./goal-revision.js";
+import { goalRevisionFollowUpPending, goalRevisionPending } from "./goal-revision.js";
 import { ensureGameScaffold, isGameRepo } from "./scaffold.js";
 import { shouldReleaseForBoardPhase } from "./release-intent.js";
 import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
@@ -1748,6 +1748,10 @@ async function maybeReviewOpenPrsWithoutVerdict(plan: Plan, token: string): Prom
 async function finishIdleGoalDispatch(goalNumber: number, comments: IssueComment[], token: string): Promise<boolean> {
   const plan = extractStoredPlan(comments, goalNumber);
   if (!plan || plan.status !== "ready") return false;
+  if (goalRevisionFollowUpPending(comments, plan.tasks.map((task) => task.id))) {
+    console.log(`goal #${goalNumber}: revision follow-up pending, skip idle promote`);
+    return false;
+  }
   await maybeReviewOpenPrsWithoutVerdict(plan, token);
   await maybePromoteGoal(goalNumber, token);
   const fresh = listIssueComments(GOAL_REPO, goalNumber, token);
@@ -2938,6 +2942,12 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
   if (stored && goalRevisionPending(fresh, humanNotes)) {
     console.log(`goal #${item.number}: revision after Review feedback`);
     await runGoalRevision(issue, stored, humanNotes, token);
+    return;
+  }
+  if (stored && goalRevisionFollowUpPending(fresh, stored.tasks.map((task) => task.id))) {
+    console.log(`goal #${item.number}: revision follow-up → worker`);
+    const notes = await dispatchPlan(stored, token, { skipIfOpenPr: false, notes: humanNotes });
+    if (!(await commentDispatch(issue.number, issue.html_url, notes, token))) process.exitCode = 2;
     return;
   }
   if (stored) {
