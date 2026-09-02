@@ -14,6 +14,8 @@
 
 `gift-sales` — отдельный продукт, один клон: `git clone https://github.com/onlyzoran/gift-sales.git /opt/cursor-workers/gift-sales` (владелец `cursor-worker`). После этого перезапусти `cursor-worker.service` (в юните новый `--worker-dir`).
 
+Прод и preview: `http://202.71.15.138/gift-sales/` и `…/preview/issue-<N>/`. Установка nginx + systemd: `orchestrator/ops/install-gift-sales.sh` (от root после `git pull`).
+
 ## Board watch
 
 Таймер `board-watch.timer` раз в 2 минуты (после окончания прошлого прогона) смотрит доску **In Progress**: первый старт или правка после Review → оркестратор/воркер; Review → In Progress без комментария → sync main (`update-branch`, при конфликте MODE B); комментарий «релизь» / «можно релизить» после Review → bump версии + ченджлог, merge PR, Done. Старые карточки в legacy-колонке Ready to Release тоже ещё релизятся.

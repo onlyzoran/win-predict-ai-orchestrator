@@ -16,6 +16,9 @@ export function previewUrlForPr(prUrl: string, goalNumber: number): string | und
   if (repo === "onlyzoran/win-predict-ai-admin") {
     return `https://win-predict-ai.com/admin-preview/${slug}/`;
   }
+  if (repo === "onlyzoran/gift-sales") {
+    return `http://202.71.15.138/gift-sales/preview/${slug}/`;
+  }
   return undefined;
 }
 

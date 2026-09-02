@@ -57,6 +57,8 @@ Goal Issue: заголовок, тело (Результат; опциональ
 |---|---|---|---|
 | продажи подарков, код в `gift-sales` | `sales` | `onlyzoran/gift-sales` | `sdk` |
 
+Деплой gift-sales: Next.js с `basePath: '/gift-sales'`. Прод — `http://202.71.15.138/gift-sales/`, preview Goal — `http://202.71.15.138/gift-sales/preview/issue-<N>/`.
+
 ## Гранулярность (крупные куски → PR)
 
 Goal — один исход для человека на доске. Одна задача плана — один **mergeable PR** в одном репо, не шаг чеклиста.

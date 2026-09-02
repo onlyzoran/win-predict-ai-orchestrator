@@ -41,6 +41,8 @@
 |---|---|
 | [`gift-sales`](https://github.com/onlyzoran/gift-sales) | продажи подарков (единственный репо) |
 
+Сайт: [http://202.71.15.138/gift-sales/](http://202.71.15.138/gift-sales/) (после deploy). Preview PR: `http://202.71.15.138/gift-sales/preview/issue-<N>/`.
+
 Goal Issues — только в этом репо (это и есть карточки на доске). PR — в таблицах выше.
 
 Старт: карточка **Inbox → In Progress** (запасной путь — `/orchestrate`). Правки: комментарий в issue и **Review → In Progress**. Без комментария тот же переход — вотчер подтягивает `main` в PR (при конфликте — воркер MODE B). Приёмка: комментарий вроде «релизь» / «можно релизить» и **Review → In Progress** (вотчер смержит и уведёт в Done).
