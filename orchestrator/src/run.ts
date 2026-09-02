@@ -2477,11 +2477,21 @@ function publishPlan(plan: Plan, issue: IssueCommentEvent["issue"], token: strin
   postPlanComment(issue, plan);
 }
 
-async function runGoalFirst(issue: IssueCommentEvent["issue"], token: string, redo: boolean): Promise<void> {
+const REPLAN_DECIDE_EXTRA = [
+  "Предыдущий план был needs_human / out_of_scope. Человек вернул карточку в In Progress — это просьба продолжить.",
+  "Не возвращай needs_human из‑за IA, размещения или варианта UX. Выбери сам один связный вариант, status ready, tasks не пустой.",
+].join("\n");
+
+async function runGoalFirst(
+  issue: IssueCommentEvent["issue"],
+  token: string,
+  redo: boolean,
+  extra = "",
+): Promise<void> {
   const productId = resolveProductId(issue.labels.map((l) => l.name));
   ensureGoalProductLabel(issue.number, productId, token);
   const gameRepo = prepareIosGamesScaffold(issue, productId, token);
-  const plan = await decompose(issue, "", gameRepo ? { gameRepo } : undefined);
+  const plan = await decompose(issue, extra, gameRepo ? { gameRepo } : undefined);
   if (plan.status !== "ready") {
     postNonReadyPlan(issue, plan, token);
     await notifyTelegram(`Goal #${issue.number}: ${plan.status}\n${plan.summary}\n${issue.html_url}`);
@@ -2584,13 +2594,20 @@ async function handleGoalFromBoard(item: BoardIssue, token: string): Promise<voi
     return;
   }
   const stored = extractStoredPlan(comments, item.number);
-  if (stored && stored.status !== "ready") {
-    console.log(`skip goal #${item.number}: plan status ${stored.status}`);
-    if (item.status === "In Progress") addToProject(item.url, "Review", token);
-    return;
-  }
   const issue = fetchIssue(item.repo, item.number, token);
   const productId = resolveProductId(issue.labels.map((l) => l.name));
+  if (stored && stored.status !== "ready") {
+    if (item.status !== "In Progress") {
+      console.log(`skip goal #${item.number}: plan status ${stored.status}`);
+      return;
+    }
+    console.log(`goal #${item.number}: ${stored.status} → пересобираю план`);
+    await notifyTelegram(`Доска: Goal #${item.number} — пересбор плана (${stored.status})\n${item.url}`);
+    claimWorking(item.repo, item.number, token);
+    await sleep(CLAIM_WAIT_MS);
+    await runGoalFirst(issue, token, true, REPLAN_DECIDE_EXTRA);
+    return;
+  }
   if (getProduct(productId).status === "stub" && !stored) {
     ensureGoalProductLabel(issue.number, productId, token);
     const plan = stubNeedsHumanPlan(issue.number, productId) as Plan;
@@ -3318,7 +3335,12 @@ async function main(): Promise<void> {
 
   try {
     claimWorking(GOAL_REPO, issue.number, token);
-    await runGoalFirst(issue, token, redo);
+    await runGoalFirst(
+      issue,
+      token,
+      redo,
+      stored && stored.status !== "ready" ? REPLAN_DECIDE_EXTRA : "",
+    );
   } catch (err) {
     console.error(err);
     const extra =
