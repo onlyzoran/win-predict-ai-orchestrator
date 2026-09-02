@@ -44,15 +44,18 @@ describe("collectPreviewUrls", () => {
 });
 
 describe("needsBrowserReview", () => {
-  it("false without preview url", () => {
+  it("true when preview url exists for visual task", () => {
     assert.equal(
       needsBrowserReview(
         { surface: "feed", repo: "onlyzoran/shoppable-feed", title: "Палитра", body: "", done_when: "" },
         ["https://github.com/onlyzoran/shoppable-feed/pull/1"],
         GOAL,
       ),
-      false,
+      true,
     );
+  });
+
+  it("false without preview url", () => {
     assert.equal(
       needsBrowserReview(
         { surface: "data", repo: "onlyzoran/win-predict-ai-data", title: "schema", body: "", done_when: "" },

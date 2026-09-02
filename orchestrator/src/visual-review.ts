@@ -31,9 +31,11 @@ export function isVisualTask(task: VisualTaskLike, notes = ""): boolean {
     (task.surface === "ui" || task.surface === "app" || task.surface === "admin") &&
     task.repo.startsWith("onlyzoran/win-predict-ai");
   const giftSalesVisual = task.surface === "sales" && task.repo === "onlyzoran/gift-sales";
+  const shoppableFeedVisual = task.surface === "feed" && task.repo === "onlyzoran/shoppable-feed";
   return (
     winPredictVisual ||
     giftSalesVisual ||
+    shoppableFeedVisual ||
     /цвет|палитр|theme|токен|dark|light|контраст/i.test(`${task.title}\n${task.body}\n${notes}`)
   );
 }

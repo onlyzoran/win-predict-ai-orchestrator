@@ -1461,32 +1461,48 @@ function validateReview(raw: unknown): Review {
   };
 }
 
-function ensureGiftSalesPreview(
+const VPS_PREVIEW_SCRIPTS: Record<string, { script: string; ifMissingEnv: string }> = {
+  "onlyzoran/gift-sales": {
+    script: "gift-sales-preview-up.sh",
+    ifMissingEnv: "GIFT_SALES_PREVIEW_IF_MISSING",
+  },
+  "onlyzoran/shoppable-feed": {
+    script: "shoppable-feed-preview-up.sh",
+    ifMissingEnv: "SHOPPABLE_FEED_PREVIEW_IF_MISSING",
+  },
+};
+
+function ensureVpsPreview(
   task: Task,
   goalNumber: number,
   headRef?: string,
   opts?: { ifMissing?: boolean },
 ): void {
-  if (task.repo !== "onlyzoran/gift-sales") return;
-  const script =
-    process.env.ORCHESTRATOR_GIFT_SALES_PREVIEW_SCRIPT?.trim() ||
-    join(ROOT, "orchestrator/ops/gift-sales-preview-up.sh");
+  const config = VPS_PREVIEW_SCRIPTS[task.repo];
+  if (!config) return;
+  const scriptOverride =
+    task.repo === "onlyzoran/gift-sales"
+      ? process.env.ORCHESTRATOR_GIFT_SALES_PREVIEW_SCRIPT?.trim()
+      : task.repo === "onlyzoran/shoppable-feed"
+        ? process.env.ORCHESTRATOR_SHOPPABLE_FEED_PREVIEW_SCRIPT?.trim()
+        : undefined;
+  const script = scriptOverride || join(ROOT, `orchestrator/ops/${config.script}`);
   if (!existsSync(script)) {
-    console.warn(`gift-sales preview: нет ${script}`);
+    console.warn(`preview ${task.repo}: нет ${script}`);
     return;
   }
   const args = [script, String(goalNumber)];
   if (headRef?.trim()) args.push(headRef.trim());
-  console.log(`gift-sales preview: bash ${args.join(" ")}`);
+  console.log(`preview ${task.repo}: bash ${args.join(" ")}`);
   const result = spawnSync("bash", args, {
     encoding: "utf8",
     env: {
       ...process.env,
-      ...(opts?.ifMissing ? { GIFT_SALES_PREVIEW_IF_MISSING: "1" } : {}),
+      ...(opts?.ifMissing ? { [config.ifMissingEnv]: "1" } : {}),
     },
   });
   if (result.status !== 0) {
-    console.warn(`gift-sales preview: ${(result.stderr || result.stdout || "failed").trim()}`);
+    console.warn(`preview ${task.repo}: ${(result.stderr || result.stdout || "failed").trim()}`);
   }
 }
 
@@ -1510,7 +1526,7 @@ async function runReviewer(
   const prBlocks = prUrls.map((url) => gatherPrContext(url, token));
   const failedChecks = prBlocks.some((block) => block.checksFailed);
   const humanGatesBlock = formatHumanGatesForReviewer(humanGates);
-  ensureGiftSalesPreview(task, goalNumber, headRef);
+  ensureVpsPreview(task, goalNumber, headRef);
   const browserReview = needsBrowserReview(task, prUrls, goalNumber, extra);
   let browserBlock = "";
   let mcpServers: ReturnType<typeof playwrightMcpServers> | undefined;
@@ -3366,14 +3382,14 @@ async function handleReadyToRelease(item: BoardIssue, token: string): Promise<vo
   console.log(`skip release ${item.url}: не штаб-репо`);
 }
 
-function backfillGiftSalesPreviews(reviewItems: BoardIssue[], token: string): void {
+function backfillVpsPreviews(reviewItems: BoardIssue[], token: string): void {
   for (const item of reviewItems) {
     const comments = listIssueComments(item.repo, item.number, token);
     const plan = extractStoredPlan(comments, item.number);
     if (!plan) continue;
     const state = lastGoalDispatchState(comments);
     for (const task of plan.tasks) {
-      ensureGiftSalesPreview(task, item.number, state?.headRef, { ifMissing: true });
+      ensureVpsPreview(task, item.number, state?.headRef, { ifMissing: true });
     }
   }
 }
@@ -3405,7 +3421,7 @@ async function watchBoard(): Promise<void> {
     writeInventory(inventory);
 
     const reviewGoals = all.filter((item) => item.status === "Review" && !item.closed && isHqIssue(item.repo));
-    backfillGiftSalesPreviews(reviewGoals, token);
+    backfillVpsPreviews(reviewGoals, token);
 
     const ready = all.filter((item) => item.status === LEGACY_READY_TO_RELEASE && !item.closed);
     const readyGoals = ready.filter((item) => isHqIssue(item.repo));

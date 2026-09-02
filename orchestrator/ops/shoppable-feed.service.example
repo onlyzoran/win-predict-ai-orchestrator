@@ -1,0 +1,21 @@
+[Unit]
+Description=shoppable-feed Next.js (http://202.71.15.138/shoppable-feed/)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cursor-worker
+Group=cursor-worker
+WorkingDirectory=/opt/cursor-workers/shoppable-feed
+EnvironmentFile=-/etc/cursor-worker.env
+Environment=NODE_ENV=production
+Environment=PORT=3003
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

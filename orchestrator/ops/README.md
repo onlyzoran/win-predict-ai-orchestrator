@@ -12,6 +12,8 @@
 
 `shoppable-feed` — отдельный продукт, один клон: `git clone https://github.com/onlyzoran/shoppable-feed.git /opt/cursor-workers/shoppable-feed` (владелец `cursor-worker`). После этого перезапусти `cursor-worker.service` (в юните новый `--worker-dir`).
 
+Прод и preview: `http://202.71.15.138/shoppable-feed/` и `…/preview/issue-<N>/`. Установка nginx + systemd: `orchestrator/ops/install-shoppable-feed.sh` (от root после `git pull`).
+
 `gift-sales` — отдельный продукт, один клон: `git clone https://github.com/onlyzoran/gift-sales.git /opt/cursor-workers/gift-sales` (владелец `cursor-worker`). После этого перезапусти `cursor-worker.service` (в юните новый `--worker-dir`).
 
 **ios-games** — per-Goal репо `onlyzoran/game-issue-<N>`. После scaffold (комментарий `<!-- orchestrator-game-repo:… -->` на Goal) на VPS от root:
@@ -68,7 +70,7 @@ journalctl -u board-watch.service -n 50 --no-pager
 
 ### Browser review (Playwright MCP)
 
-Local-ревьюер для ui/app/admin/gift-sales с demo URL ждёт preview (до 3 мин) и открывает его через Playwright MCP (`@playwright/mcp`, headless). На VPS под пользователем `cursor-worker` нужны Node ≥22 и сеть для `npx` (первый прогон скачает Chromium).
+Local-ревьюер для ui/app/admin/gift-sales/feed с demo URL ждёт preview (до 3 мин) и открывает его через Playwright MCP (`@playwright/mcp`, headless). На VPS под пользователем `cursor-worker` нужны Node ≥22 и сеть для `npx` (первый прогон скачает Chromium).
 
 ```bash
 # Проверка от cursor-worker (тот же PATH, что board-watch)

@@ -20,6 +20,9 @@ export function previewUrlForPr(prUrl: string, goalNumber: number): string | und
     // HTTP: TLS на IP нет своего имени. https://<ip>/ ловит первый 443-vhost (HQ SPA).
     return `http://202.71.15.138/gift-sales/preview/${slug}/`;
   }
+  if (repo === "onlyzoran/shoppable-feed") {
+    return `http://202.71.15.138/shoppable-feed/preview/${slug}/`;
+  }
   return undefined;
 }
 

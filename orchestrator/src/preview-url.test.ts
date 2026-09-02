@@ -40,6 +40,13 @@ describe("previewUrlForPr", () => {
     );
   });
 
+  it("shoppable-feed preview на VPS", () => {
+    assert.equal(
+      previewUrlForPr("https://github.com/onlyzoran/shoppable-feed/pull/1", GOAL),
+      "http://202.71.15.138/shoppable-feed/preview/issue-31/",
+    );
+  });
+
   it("data — без preview", () => {
     assert.equal(previewUrlForPr("https://github.com/onlyzoran/win-predict-ai-data/pull/1", GOAL), undefined);
   });

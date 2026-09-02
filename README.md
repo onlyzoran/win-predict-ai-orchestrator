@@ -35,6 +35,8 @@
 |---|---|
 | [`shoppable-feed`](https://github.com/onlyzoran/shoppable-feed) | лента товаров (единственный репо) |
 
+Сайт: [http://202.71.15.138/shoppable-feed/](http://202.71.15.138/shoppable-feed/) (после deploy). Preview PR: `http://202.71.15.138/shoppable-feed/preview/issue-<N>/`.
+
 ## Рабочие репозитории (gift-sales)
 
 | Репо | Роль |

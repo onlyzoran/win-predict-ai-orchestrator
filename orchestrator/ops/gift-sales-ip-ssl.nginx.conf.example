@@ -24,4 +24,5 @@ server {
     }
 
     include /etc/nginx/snippets/gift-sales.conf;
+    include /etc/nginx/snippets/shoppable-feed.conf;
 }

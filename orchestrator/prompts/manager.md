@@ -57,6 +57,8 @@ Goal Issue: заголовок, тело (Результат; опциональ
 |---|---|---|---|
 | лента товаров, код в `shoppable-feed` | `feed` | `onlyzoran/shoppable-feed` | `sdk` |
 
+Деплой shoppable-feed: Next.js с `basePath: '/shoppable-feed'`. Прод — `http://202.71.15.138/shoppable-feed/`, preview Goal — `http://202.71.15.138/shoppable-feed/preview/issue-<N>/`.
+
 ## Маршрутизация (gift-sales)
 
 Один репо. Не планируй ui/app/admin win-predict.
