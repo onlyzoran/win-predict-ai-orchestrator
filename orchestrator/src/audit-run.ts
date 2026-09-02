@@ -107,6 +107,8 @@ function addToProject(url: string, token: string, productId: string): void {
   );
 }
 
+const TELEGRAM_TIMEOUT_MS = 15_000;
+
 async function notifyTelegram(text: string): Promise<void> {
   const bot = process.env.TELEGRAM_BOT_TOKEN?.trim();
   const chat = process.env.TELEGRAM_CHAT_ID?.trim();
@@ -115,6 +117,7 @@ async function notifyTelegram(text: string): Promise<void> {
     const res = await fetch(`https://api.telegram.org/bot${bot}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
       body: JSON.stringify({
         chat_id: chat,
         text: text.slice(0, 3500),

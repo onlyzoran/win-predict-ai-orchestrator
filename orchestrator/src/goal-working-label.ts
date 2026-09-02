@@ -36,17 +36,26 @@ export function shouldHaveReviewingLabel(
   return isActivePhaseLabel(state, "reviewing", now, staleMs);
 }
 
-/** Echo after maybePromoteGoal: «Воркеры.» + только итог ревью, без новой работы. */
-export function isPostPromoteWorkingEcho(body: string): boolean {
-  if (!/\*\*Воркеры\.\*\*/.test(body)) return false;
-  const notes = body
+function extractDispatchNotes(body: string): string[] {
+  return body
     .split("\n")
     .filter((line) => line.startsWith("- "))
     .map((line) => line.slice(2).trim());
-  if (!notes.length) return false;
-  return notes.every(
-    (note) =>
-      /review (pass|blocked|changes)/i.test(note) ||
-      /уже (закрыт|смержен|запускали)/i.test(note),
+}
+
+function isTerminalDispatchNote(note: string): boolean {
+  return (
+    /review (pass|blocked|changes)/i.test(note) ||
+    /уже (закрыт|смержен|запускали)/i.test(note)
   );
+}
+
+/** Spurious working after promote (legacy «Воркеры.» or slim JSON+notes). */
+export function isPostPromoteWorkingEcho(body: string): boolean {
+  if (!/"phase"\s*:\s*"working"/.test(body)) return false;
+  if (/\*\*В работе\.\*\*/.test(body)) return false;
+  const notes = extractDispatchNotes(body);
+  if (!notes.length || !notes.every(isTerminalDispatchNote)) return false;
+  if (/\*\*Воркеры\.\*\*/.test(body)) return true;
+  return notes.every((note) => /review (pass|blocked|changes)/i.test(note));
 }

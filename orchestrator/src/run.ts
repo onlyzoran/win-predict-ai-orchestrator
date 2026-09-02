@@ -316,6 +316,8 @@ function shouldNotifyWatchError(message: string): boolean {
   return true;
 }
 
+const TELEGRAM_TIMEOUT_MS = 15_000;
+
 async function notifyTelegram(text: string): Promise<void> {
   const bot = process.env.TELEGRAM_BOT_TOKEN?.trim();
   const chat = process.env.TELEGRAM_CHAT_ID?.trim();
@@ -324,6 +326,7 @@ async function notifyTelegram(text: string): Promise<void> {
     const res = await fetch(`https://api.telegram.org/bot${bot}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
       body: JSON.stringify({
         chat_id: chat,
         text: text.slice(0, 3500),
@@ -591,7 +594,7 @@ function lastGoalDispatchState(comments: IssueComment[]): DispatchState | undefi
   return undefined;
 }
 
-/** Goal-level dispatch for phase labels; skips post-promote «Воркеры.» echo. */
+/** Goal-level dispatch for phase labels; skips post-promote working echo. */
 function goalDispatchStateForLabels(comments: IssueComment[]): DispatchState | undefined {
   for (const comment of [...comments].reverse()) {
     const state = parseDispatchState(comment.body);
@@ -692,7 +695,7 @@ function claimWorking(repo: string, issueNumber: number, token: string): void {
   commentGoalDispatch(
     issueNumber,
     { phase: "working", at: new Date().toISOString() },
-    ["", "**В работе.** Карточка In Progress. Не дублирую запуск."],
+    [],
     token,
   );
 }
@@ -706,7 +709,7 @@ function claimReviewing(
   commentGoalDispatch(
     issueNumber,
     { phase: "reviewing", ...state, at: new Date().toISOString() },
-    ["", "**Ревьюер смотрит.** PR сдан, карточка In Progress. Не дублирую запуск."],
+    [],
     token,
   );
 }
@@ -720,7 +723,7 @@ function claimReleasing(
   commentGoalDispatch(
     issueNumber,
     { phase: "releasing", ...state, at: new Date().toISOString() },
-    ["", "**Релиз.** Ченджлог → merge → Done. Не дублирую запуск."],
+    [],
     token,
   );
 }
@@ -1838,7 +1841,7 @@ async function settleWithReviewer(
   commentGoalDispatch(
     goalNumber,
     { phase: "reviewing", ...baseState, at: new Date().toISOString() },
-    ["", `**Ревьюер смотрит** \`${task.id}\`. Не дублирую запуск.`],
+    [],
     token,
   );
   const comments = listIssueComments(GOAL_REPO, goalNumber, token);
@@ -2704,10 +2707,15 @@ async function commentDispatch(
   const state: DispatchState = failed
     ? { phase: "error", at: new Date().toISOString() }
     : { phase: "working", at: new Date().toISOString() };
-  const lines = failed
+  const lines: string[] = failed
     ? ["**Воркеры (есть ошибки).** Верни карточку в In Progress или `/orchestrate`."]
-    : ["**Воркеры.**"];
-  commentGoalDispatch(goalNumber, state, [...lines, "", ...notes.map((n) => `- ${n}`)], token);
+    : [];
+  const bodyLines = [...lines];
+  if (notes.length) {
+    if (bodyLines.length) bodyLines.push("");
+    bodyLines.push(...notes.map((n) => `- ${n}`));
+  }
+  commentGoalDispatch(goalNumber, state, bodyLines, token);
   const digest = notes.map((n) => `- ${n}`).join("\n");
   if (failed) await notifyTelegram(`Goal #${goalNumber}: ошибки\n${goalIssueUrl}\n${digest}`);
   else if (!allSkipped) await notifyTelegram(`Goal #${goalNumber}: воркеры\n${goalIssueUrl}\n${digest}`);

@@ -98,10 +98,38 @@ describe("isPostPromoteWorkingEcho", () => {
     );
   });
 
+  it("true for slim working + review pass only", () => {
+    assert.equal(
+      isPostPromoteWorkingEcho(
+        [
+          "<!-- orchestrator-dispatch -->",
+          '<!-- orchestrator-state:{"phase":"working"} -->',
+          "- sales-price-comparison-ui — review pass — https://github.com/x/pull/7",
+        ].join("\n"),
+      ),
+      true,
+    );
+  });
+
+  it("false for marker-only claim without notes", () => {
+    assert.equal(
+      isPostPromoteWorkingEcho(
+        [
+          "<!-- orchestrator-dispatch -->",
+          '<!-- orchestrator-state:{"phase":"working","at":"2026-01-01T00:00:00.000Z"} -->',
+        ].join("\n"),
+      ),
+      false,
+    );
+  });
+
   it("false when note implies active worker", () => {
     assert.equal(
       isPostPromoteWorkingEcho(
-        ["**Воркеры.**", "", "- ui-home — sdk воркер на машине"].join("\n"),
+        [
+          '<!-- orchestrator-state:{"phase":"working"} -->',
+          "- ui-home — sdk воркер на машине",
+        ].join("\n"),
       ),
       false,
     );
