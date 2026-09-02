@@ -66,5 +66,16 @@
         "description": "лента товаров (единственный репо продукта)"
       }
     }
+  },
+  "gift-sales": {
+    "status": "active",
+    "label": "gift-sales",
+    "surfaces": {
+      "sales": {
+        "repo": "onlyzoran/gift-sales",
+        "trigger": "sdk",
+        "description": "продажи подарков (единственный репо продукта)"
+      }
+    }
   }
 }

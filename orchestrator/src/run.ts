@@ -97,8 +97,9 @@ const REPOS = [
   "onlyzoran/win-predict-ai-admin",
   "onlyzoran/win-predict-ai-ios",
   "onlyzoran/shoppable-feed",
+  "onlyzoran/gift-sales",
 ] as const;
-const SURFACES = ["ui", "icons", "data", "app", "admin", "ios", "feed"] as const;
+const SURFACES = ["ui", "icons", "data", "app", "admin", "ios", "feed", "sales"] as const;
 const LABEL_META: Record<(typeof SURFACES)[number], { color: string; description: string }> = {
   ui: { color: "1d76db", description: "win-predict-ai-ui" },
   icons: { color: "fbca04", description: "win-predict-ai-icons" },
@@ -107,6 +108,7 @@ const LABEL_META: Record<(typeof SURFACES)[number], { color: string; description
   admin: { color: "5319e7", description: "win-predict-ai-admin" },
   ios: { color: "e99695", description: "win-predict-ai-ios" },
   feed: { color: "006b75", description: "shoppable-feed" },
+  sales: { color: "0052cc", description: "gift-sales" },
 };
 const REPO_SURFACE: Record<(typeof REPOS)[number], Surface> = {
   "onlyzoran/win-predict-ai-ui": "ui",
@@ -116,6 +118,7 @@ const REPO_SURFACE: Record<(typeof REPOS)[number], Surface> = {
   "onlyzoran/win-predict-ai-admin": "admin",
   "onlyzoran/win-predict-ai-ios": "ios",
   "onlyzoran/shoppable-feed": "feed",
+  "onlyzoran/gift-sales": "sales",
 };
 
 type Surface = (typeof SURFACES)[number];
@@ -1059,6 +1062,7 @@ const PRODUCT_LABEL_META: Record<string, { color: string; description: string }>
   "telegram-bots": { color: "1d76db", description: "продукт telegram-bots (stub)" },
   "ios-games": { color: "d93f0b", description: "продукт ios-games (stub)" },
   "shoppable-feed": { color: "006b75", description: "продукт shoppable-feed" },
+  "gift-sales": { color: "0052cc", description: "продукт gift-sales" },
 };
 
 function ensureProductLabel(productId: string, token: string): void {

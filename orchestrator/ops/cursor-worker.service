@@ -23,6 +23,7 @@ ExecStart=/opt/cursor-workers/.local/bin/agent worker \
   --worker-dir /opt/cursor-workers/win-predict-ai-ui \
   --worker-dir /opt/cursor-workers/win-predict-ai-ios \
   --worker-dir /opt/cursor-workers/shoppable-feed \
+  --worker-dir /opt/cursor-workers/gift-sales \
   start --verbose
 Restart=always
 RestartSec=10

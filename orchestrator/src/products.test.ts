@@ -100,6 +100,8 @@ test("loadProductRegistry: shipped file", () => {
   assert.equal(registry["ios-games"]?.status, "stub");
   assert.equal(registry["shoppable-feed"]?.status, "active");
   assert.equal(registry["shoppable-feed"]?.surfaces.feed?.repo, "onlyzoran/shoppable-feed");
+  assert.equal(registry["gift-sales"]?.status, "active");
+  assert.equal(registry["gift-sales"]?.surfaces.sales?.repo, "onlyzoran/gift-sales");
 });
 
 test("getBoardProject: stub inherits win-predict-ai board", () => {
@@ -107,12 +109,15 @@ test("getBoardProject: stub inherits win-predict-ai board", () => {
   const registry = loadProductRegistry();
   assert.equal(getBoardProject("telegram-bots", registry).id, registry["win-predict-ai"]?.board?.id);
   assert.equal(getBoardProject("shoppable-feed", registry).id, registry["win-predict-ai"]?.board?.id);
+  assert.equal(getBoardProject("gift-sales", registry).id, registry["win-predict-ai"]?.board?.id);
 });
 
 test("taskMatchesProduct", () => {
   clearProductRegistryCache();
   assert.equal(taskMatchesProduct("shoppable-feed", "feed", "onlyzoran/shoppable-feed"), true);
   assert.equal(taskMatchesProduct("shoppable-feed", "app", "onlyzoran/win-predict-ai"), false);
+  assert.equal(taskMatchesProduct("gift-sales", "sales", "onlyzoran/gift-sales"), true);
+  assert.equal(taskMatchesProduct("gift-sales", "app", "onlyzoran/win-predict-ai"), false);
   assert.equal(taskMatchesProduct("win-predict-ai", "app", "onlyzoran/win-predict-ai"), true);
 });
 

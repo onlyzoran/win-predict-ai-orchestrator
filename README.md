@@ -1,6 +1,6 @@
 # win-predict-ai-orchestrator
 
-Штаб продуктов: цели, GitHub Project и оркестратор. Сейчас **active** — **win-predict-ai** и **shoppable-feed**; **telegram-bots** и **ios-games** — stub. Одна Goal на доске — несколько PR в рабочих репо.
+Штаб продуктов: цели, GitHub Project и оркестратор. Сейчас **active** — **win-predict-ai**, **shoppable-feed** и **gift-sales**; **telegram-bots** и **ios-games** — stub. Одна Goal на доске — несколько PR в рабочих репо.
 
 Промпты и конфиги cloud-агентов здесь **не** хранятся — они живут в [`cursor-cloud-agents`](https://github.com/onlyzoran/cursor-cloud-agents).
 
@@ -10,6 +10,7 @@
 |---|---|---|
 | win-predict-ai | Issues → **win-predict-ai** | active |
 | shoppable-feed | Issues → **shoppable-feed** | active |
+| gift-sales | Issues → **gift-sales** | active |
 | telegram-bots | Issues → **telegram-bots** | stub |
 | ios-games | Issues → **ios-games** | stub |
 
@@ -33,6 +34,12 @@
 | Репо | Роль |
 |---|---|
 | [`shoppable-feed`](https://github.com/onlyzoran/shoppable-feed) | лента товаров (единственный репо) |
+
+## Рабочие репозитории (gift-sales)
+
+| Репо | Роль |
+|---|---|
+| [`gift-sales`](https://github.com/onlyzoran/gift-sales) | продажи подарков (единственный репо) |
 
 Goal Issues — только в этом репо (это и есть карточки на доске). PR — в таблицах выше.
 

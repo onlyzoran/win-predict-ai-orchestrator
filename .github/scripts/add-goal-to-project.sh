@@ -15,7 +15,7 @@ INBOX_OPTION="$(jq -r '."win-predict-ai".board.statusOptions.Inbox' "$REGISTRY")
 
 labels_csv="${LABELS:-}"
 case ",${labels_csv}," in
-  *,win-predict-ai,* | *,telegram-bots,* | *,ios-games,* | *,shoppable-feed,*)
+  *,win-predict-ai,* | *,telegram-bots,* | *,ios-games,* | *,shoppable-feed,* | *,gift-sales,*)
     ;;
   *)
     echo "skip: no product label (${labels_csv})"

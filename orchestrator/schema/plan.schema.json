@@ -24,7 +24,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["ui", "icons", "data", "app", "admin", "ios", "feed"]
+        "enum": ["ui", "icons", "data", "app", "admin", "ios", "feed", "sales"]
       },
       "uniqueItems": true
     },
@@ -60,7 +60,7 @@
         },
         "surface": {
           "type": "string",
-          "enum": ["ui", "icons", "data", "app", "admin", "ios", "feed"]
+          "enum": ["ui", "icons", "data", "app", "admin", "ios", "feed", "sales"]
         },
         "repo": {
           "type": "string",
@@ -71,7 +71,8 @@
             "onlyzoran/win-predict-ai",
             "onlyzoran/win-predict-ai-admin",
             "onlyzoran/win-predict-ai-ios",
-            "onlyzoran/shoppable-feed"
+            "onlyzoran/shoppable-feed",
+            "onlyzoran/gift-sales"
           ]
         },
         "title": { "type": "string", "minLength": 1 },

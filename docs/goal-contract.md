@@ -1,6 +1,6 @@
 # Контракт Goal Issue
 
-Goal — одна высокоуровневая цель **продукта**. Живёт в этом штаб-репо. На доске одна карточка; оркестратор открывает **несколько PR** в рабочих репо (active — win-predict-ai и shoppable-feed). Child issues не создаются.
+Goal — одна высокоуровневая цель **продукта**. Живёт в этом штаб-репо. На доске одна карточка; оркестратор открывает **несколько PR** в рабочих репо (active — win-predict-ai, shoppable-feed и gift-sales). Child issues не создаются.
 
 ## Продукты
 
@@ -8,6 +8,7 @@ Goal — одна высокоуровневая цель **продукта**. 
 |---|---|---|
 | **win-predict-ai** | `win-predict-ai` | active — PR в ui/icons/data/app/admin/ios |
 | **shoppable-feed** | `shoppable-feed` | active — PR в `onlyzoran/shoppable-feed` |
+| **gift-sales** | `gift-sales` | active — PR в `onlyzoran/gift-sales` |
 | **telegram-bots** | `telegram-bots` | stub — Goal на доске, PR не открываются |
 | **ios-games** | `ios-games` | stub — Goal на доске, PR не открываются |
 
@@ -23,6 +24,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 
 - `…/issues/new?template=goal-win-predict-ai.yml`
 - `…/issues/new?template=goal-shoppable-feed.yml`
+- `…/issues/new?template=goal-gift-sales.yml`
 - `…/issues/new?template=goal-telegram-bots.yml`
 - `…/issues/new?template=goal-ios-games.yml`
 
@@ -60,6 +62,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 |---|---|---|
 | `win-predict-ai` | Goal (этот репо) | продукт win-predict |
 | `shoppable-feed` | Goal | продукт shoppable-feed |
+| `gift-sales` | Goal | продукт gift-sales |
 | `telegram-bots` | Goal | продукт bots (stub) |
 | `ios-games` | Goal | продукт ios-games (stub) |
 

@@ -1,0 +1,16 @@
+name: gift-sales
+description: Цель для gift-sales (продажи подарков).
+labels: ["gift-sales"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Продукт: **gift-sales**. Inbox → In Progress — менеджер откроет PR в `onlyzoran/gift-sales`.
+        Правки: комментарий + Review → In Progress. Приёмка: «релизь» + Review → In Progress.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Результат
+      description: Что должно быть правдой, когда цель закрыта.
+    validations:
+      required: true
