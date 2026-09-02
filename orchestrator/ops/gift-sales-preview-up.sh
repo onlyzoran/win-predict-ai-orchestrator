@@ -39,6 +39,17 @@ git_auth() {
   fi
 }
 
+exec 9>"/tmp/gift-sales-preview.lock"
+if ! flock -n 9; then
+  echo "preview build already running"
+  exit 0
+fi
+
+if [[ ${GIFT_SALES_PREVIEW_IF_MISSING:-} == 1 && -f $TARGET/index.html ]]; then
+  echo "preview exists: $TARGET"
+  exit 0
+fi
+
 if [[ ! -d $SRC/.git ]]; then
   mkdir -p "$(dirname "$SRC")"
   git_auth clone "https://github.com/${REPO}.git" "$SRC"

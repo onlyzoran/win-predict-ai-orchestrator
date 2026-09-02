@@ -1461,7 +1461,12 @@ function validateReview(raw: unknown): Review {
   };
 }
 
-function ensureGiftSalesPreview(task: Task, goalNumber: number, headRef?: string): void {
+function ensureGiftSalesPreview(
+  task: Task,
+  goalNumber: number,
+  headRef?: string,
+  opts?: { ifMissing?: boolean },
+): void {
   if (task.repo !== "onlyzoran/gift-sales") return;
   const script =
     process.env.ORCHESTRATOR_GIFT_SALES_PREVIEW_SCRIPT?.trim() ||
@@ -1473,7 +1478,13 @@ function ensureGiftSalesPreview(task: Task, goalNumber: number, headRef?: string
   const args = [script, String(goalNumber)];
   if (headRef?.trim()) args.push(headRef.trim());
   console.log(`gift-sales preview: bash ${args.join(" ")}`);
-  const result = spawnSync("bash", args, { encoding: "utf8", env: process.env });
+  const result = spawnSync("bash", args, {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...(opts?.ifMissing ? { GIFT_SALES_PREVIEW_IF_MISSING: "1" } : {}),
+    },
+  });
   if (result.status !== 0) {
     console.warn(`gift-sales preview: ${(result.stderr || result.stdout || "failed").trim()}`);
   }
@@ -1487,6 +1498,7 @@ async function runReviewer(
   token: string,
   extra = "",
   humanGates: string[] = [],
+  headRef?: string,
 ): Promise<Review> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
@@ -1498,7 +1510,7 @@ async function runReviewer(
   const prBlocks = prUrls.map((url) => gatherPrContext(url, token));
   const failedChecks = prBlocks.some((block) => block.checksFailed);
   const humanGatesBlock = formatHumanGatesForReviewer(humanGates);
-  ensureGiftSalesPreview(task, goalNumber);
+  ensureGiftSalesPreview(task, goalNumber, headRef);
   const browserReview = needsBrowserReview(task, prUrls, goalNumber, extra);
   let browserBlock = "";
   let mcpServers: ReturnType<typeof playwrightMcpServers> | undefined;
@@ -1740,6 +1752,7 @@ async function settleWithReviewer(
       token,
       `${roundCap}${iconGate}\n\nСдача воркера:\n${ctx.source}`,
       humanGates,
+      ctx.headRef,
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -3353,6 +3366,18 @@ async function handleReadyToRelease(item: BoardIssue, token: string): Promise<vo
   console.log(`skip release ${item.url}: не штаб-репо`);
 }
 
+function backfillGiftSalesPreviews(reviewItems: BoardIssue[], token: string): void {
+  for (const item of reviewItems) {
+    const comments = listIssueComments(item.repo, item.number, token);
+    const plan = extractStoredPlan(comments, item.number);
+    if (!plan) continue;
+    const state = lastGoalDispatchState(comments);
+    for (const task of plan.tasks) {
+      ensureGiftSalesPreview(task, item.number, state?.headRef, { ifMissing: true });
+    }
+  }
+}
+
 async function watchBoard(): Promise<void> {
   if (!process.env.TELEGRAM_BOT_TOKEN?.trim() || !process.env.TELEGRAM_CHAT_ID?.trim()) {
     console.warn("telegram: нет TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID — в чат не пишу");
@@ -3378,6 +3403,9 @@ async function watchBoard(): Promise<void> {
         .map(cardFromIssue),
     };
     writeInventory(inventory);
+
+    const reviewGoals = all.filter((item) => item.status === "Review" && !item.closed && isHqIssue(item.repo));
+    backfillGiftSalesPreviews(reviewGoals, token);
 
     const ready = all.filter((item) => item.status === LEGACY_READY_TO_RELEASE && !item.closed);
     const readyGoals = ready.filter((item) => isHqIssue(item.repo));
