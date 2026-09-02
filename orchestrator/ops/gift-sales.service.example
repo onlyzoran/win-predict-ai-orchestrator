@@ -10,7 +10,7 @@ Group=cursor-worker
 WorkingDirectory=/opt/cursor-workers/gift-sales
 EnvironmentFile=-/etc/cursor-worker.env
 Environment=NODE_ENV=production
-Environment=PORT=3001
+Environment=PORT=3002
 Environment=HOSTNAME=127.0.0.1
 ExecStart=/usr/bin/npm run start
 Restart=always
