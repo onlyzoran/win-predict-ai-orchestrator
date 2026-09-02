@@ -12,6 +12,14 @@ import {
 } from "./acceptance.js";
 import { unmetDependencyIds } from "./depends.js";
 import {
+  formatPublisherComment,
+  isActivePublisher,
+  isPrereleaseReady,
+  latestPublisherState,
+  needsPublisherRun,
+  type PublisherState,
+} from "./publisher-loop.js";
+import {
   formatProductContext,
   getProduct,
   listBoardProjects,
@@ -889,6 +897,14 @@ function findOpenConsumerPrsForGoalTask(
   return findOpenBumpPrsForGoalTask(goalNumber, taskId, repo, token);
 }
 
+function prHeadSha(prUrl: string, token: string): string {
+  const { repo, number } = parsePrUrl(prUrl);
+  const raw = gh(["pr", "view", String(number), "-R", repo, "--json", "headRefOid"], token);
+  const parsed = JSON.parse(raw) as { headRefOid?: string };
+  if (!parsed.headRefOid) throw new Error(`нет headRefOid для ${prUrl}`);
+  return parsed.headRefOid;
+}
+
 function findMergedPrsForGoalTask(goalNumber: number, taskId: string, repo: string, token: string): OpenPr[] {
   const parent = parentLine(GOAL_REPO, goalNumber);
   return matchGoalTaskPrs(listRepoPrs(repo, "merged", token), parent, taskId).map((pr) => ({
@@ -1445,6 +1461,24 @@ function validateReview(raw: unknown): Review {
   };
 }
 
+function ensureGiftSalesPreview(task: Task, goalNumber: number, headRef?: string): void {
+  if (task.repo !== "onlyzoran/gift-sales") return;
+  const script =
+    process.env.ORCHESTRATOR_GIFT_SALES_PREVIEW_SCRIPT?.trim() ||
+    join(ROOT, "orchestrator/ops/gift-sales-preview-up.sh");
+  if (!existsSync(script)) {
+    console.warn(`gift-sales preview: нет ${script}`);
+    return;
+  }
+  const args = [script, String(goalNumber)];
+  if (headRef?.trim()) args.push(headRef.trim());
+  console.log(`gift-sales preview: bash ${args.join(" ")}`);
+  const result = spawnSync("bash", args, { encoding: "utf8", env: process.env });
+  if (result.status !== 0) {
+    console.warn(`gift-sales preview: ${(result.stderr || result.stdout || "failed").trim()}`);
+  }
+}
+
 async function runReviewer(
   task: Task,
   goalIssueUrl: string,
@@ -1464,6 +1498,7 @@ async function runReviewer(
   const prBlocks = prUrls.map((url) => gatherPrContext(url, token));
   const failedChecks = prBlocks.some((block) => block.checksFailed);
   const humanGatesBlock = formatHumanGatesForReviewer(humanGates);
+  ensureGiftSalesPreview(task, goalNumber);
   const browserReview = needsBrowserReview(task, prUrls, goalNumber, extra);
   let browserBlock = "";
   let mcpServers: ReturnType<typeof playwrightMcpServers> | undefined;
@@ -2023,15 +2058,30 @@ async function bumpPrereleaseIntoGoalConsumers(
   return results;
 }
 
-async function afterLibraryPr(
+async function runPublisherLoopForTask(
   task: Task,
   goalNumber: number,
-  prUrls: string[],
+  prUrl: string,
   token: string,
+  prSha?: string,
 ): Promise<string> {
-  if (!isLibraryPackageRepo(task.repo) || !prUrls.length) return "";
+  const publishing: PublisherState = {
+    taskId: task.id,
+    phase: "publishing",
+    prUrl,
+    prSha,
+    at: new Date().toISOString(),
+  };
+  commentOnGoal(
+    goalNumber,
+    formatPublisherComment(publishing, [
+      `**Publisher.** \`${task.id}\` — publish + bump app/admin…`,
+      `- PR: ${prUrl}`,
+    ]),
+  );
+
   try {
-    const published = publishLibraryPrerelease(prUrls[0], token, gh);
+    const published = publishLibraryPrerelease(prUrl, token, gh);
     const bumps = await bumpPrereleaseIntoGoalConsumers(
       goalNumber,
       published.packageName,
@@ -2041,10 +2091,19 @@ async function afterLibraryPr(
     const bumpLines = bumps.length
       ? bumps.map((b) => `- ${b.note}`)
       : ["- consumer app/admin в плане Goal нет или PR ещё нет"];
+    const done: PublisherState = {
+      taskId: task.id,
+      phase: "bump_done",
+      prUrl,
+      prSha: published.sha,
+      packageName: published.packageName,
+      version: published.version,
+      at: new Date().toISOString(),
+    };
     commentOnGoal(
       goalNumber,
-      [
-        `**Prerelease** \`${task.id}\`.`,
+      formatPublisherComment(done, [
+        `**Publisher.** \`${task.id}\` — prerelease готов.`,
         `- пакет: \`${published.packageName}@${published.version}\``,
         `- dist-tag: \`${published.tag}\``,
         `- PR: ${published.prUrl}`,
@@ -2052,22 +2111,112 @@ async function afterLibraryPr(
         "",
         "Подтянул в app/admin:",
         ...bumpLines,
-      ].join("\n"),
+      ]),
     );
     await notifyTelegram(
-      `Prerelease ${published.packageName}@${published.version}\n${goalUrl(goalNumber)}\n${bumps.map((b) => b.note).join("\n")}`,
+      `Publisher ${published.packageName}@${published.version}\n${goalUrl(goalNumber)}\n${bumps.map((b) => b.note).join("\n")}`,
     );
-    return `${published.packageName}@${published.version}`;
+    return `publisher ${task.id} — ${published.packageName}@${published.version}`;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.warn(`prerelease ${task.id}: ${message}`);
+    console.warn(`publisher ${task.id}: ${message}`);
+    const failed: PublisherState = {
+      taskId: task.id,
+      phase: "publish_error",
+      prUrl,
+      prSha,
+      at: new Date().toISOString(),
+    };
     commentOnGoal(
       goalNumber,
-      `**Prerelease не вышел** (\`${task.id}\`). ${message.slice(0, 500)}\nПовтор — после следующего пуша в PR библиотеки.`,
+      formatPublisherComment(failed, [
+        `**Publisher не вышел** (\`${task.id}\`). ${message.slice(0, 500)}`,
+        "Повтор — на следующем тике catch-up или после пуша в PR библиотеки.",
+      ]),
     );
-    await notifyTelegram(`Prerelease ошибка\n${goalUrl(goalNumber)}\n${message.slice(0, 400)}`);
-    return "";
+    await notifyTelegram(`Publisher ошибка\n${goalUrl(goalNumber)}\n${message.slice(0, 400)}`);
+    return `publisher ${task.id} — ошибка`;
   }
+}
+
+async function afterLibraryPr(
+  task: Task,
+  goalNumber: number,
+  prUrls: string[],
+  token: string,
+): Promise<string> {
+  if (!isLibraryPackageRepo(task.repo) || !prUrls.length) return "";
+  const prUrl = prUrls[0];
+  const comments = listIssueComments(GOAL_REPO, goalNumber, token);
+  const state = latestPublisherState(comments, task.id);
+  let prSha: string | undefined;
+  try {
+    prSha = prHeadSha(prUrl, token);
+  } catch {
+    /* optional for gate */
+  }
+  if (
+    !needsPublisherRun({
+      repo: task.repo,
+      openPrUrl: prUrl,
+      openPrSha: prSha,
+      state,
+      publishingActive: isActivePublisher(state),
+    })
+  ) {
+    return state?.packageName && state.version ? `${state.packageName}@${state.version}` : "";
+  }
+  return runPublisherLoopForTask(task, goalNumber, prUrl, token, prSha);
+}
+
+async function maybeRunPublisherLoop(plan: Plan, token: string): Promise<string[]> {
+  const comments = listIssueComments(GOAL_REPO, plan.goal_number, token);
+  const notes: string[] = [];
+  for (const task of plan.tasks) {
+    if (!isLibraryPackageRepo(task.repo)) continue;
+    const open = findOpenPrsForGoalTask(plan.goal_number, task.id, task.repo, token);
+    if (!open.length) continue;
+    const prUrl = open[0].url;
+    const state = latestPublisherState(comments, task.id);
+    if (isActivePublisher(state)) {
+      notes.push(`\`${task.id}\` — publisher…`);
+      continue;
+    }
+    let prSha: string | undefined;
+    try {
+      prSha = prHeadSha(prUrl, token);
+    } catch {
+      /* optional */
+    }
+    if (
+      !needsPublisherRun({
+        repo: task.repo,
+        openPrUrl: prUrl,
+        openPrSha: prSha,
+        state,
+      })
+    ) {
+      continue;
+    }
+    notes.push(await runPublisherLoopForTask(task, plan.goal_number, prUrl, token, prSha));
+  }
+  return notes;
+}
+
+function prereleaseReadyForDependency(
+  plan: Plan,
+  depId: string,
+  comments: IssueComment[],
+  token: string,
+): boolean {
+  const depTask = plan.tasks.find((t) => t.id === depId);
+  if (!depTask || !isLibraryPackageRepo(depTask.repo)) return true;
+  const progress = taskProgress(depTask, plan.goal_number, token);
+  if (!progress?.url || progress.closed) return true;
+  const open = findOpenPrsForGoalTask(plan.goal_number, depId, depTask.repo, token);
+  if (!open.length) return false;
+  const state = latestPublisherState(comments, depId);
+  return isPrereleaseReady(state, open[0].url);
 }
 
 async function promoteStableIntoGoalConsumers(
@@ -2215,6 +2364,9 @@ async function dispatchPlan(
   );
   const notes: string[] = [];
   const comments = listIssueComments(GOAL_REPO, plan.goal_number, token);
+  const depCtx = {
+    prereleaseReady: (depId: string) => prereleaseReadyForDependency(plan, depId, comments, token),
+  };
   for (const task of ordered) {
     const progress = taskProgress(task, plan.goal_number, token);
     if (progress?.closed) {
@@ -2236,9 +2388,17 @@ async function dispatchPlan(
             return depTask ? taskProgress(depTask, plan.goal_number, token) : undefined;
           },
           (depUrl) => /\/pull\/\d+/.test(depUrl),
+          depCtx,
         );
         if (unmet.length) {
-          notes.push(`\`${task.id}\` — жду ${unmet.join(", ")}`);
+          const publishWait = task.depends_on.filter(
+            (id) => unmet.includes(id) && !depCtx.prereleaseReady(id),
+          );
+          if (publishWait.length) {
+            notes.push(`\`${task.id}\` — жду publish ${publishWait.join(", ")}`);
+          } else {
+            notes.push(`\`${task.id}\` — жду ${unmet.join(", ")}`);
+          }
           continue;
         }
       }
@@ -2373,8 +2533,10 @@ function isIdleDispatchNote(note: string): boolean {
     note.includes("уже закрыт") ||
     note.includes("смержен") ||
     note.includes(" — жду ") ||
+    note.includes("жду publish") ||
     note.includes("жду PR") ||
-    note.includes("ревьюер смотрит")
+    note.includes("ревьюер смотрит") ||
+    note.includes("publisher…")
   );
 }
 
@@ -2388,7 +2550,8 @@ async function catchUpGoalByNumber(goalNumber: number, token: string): Promise<v
   if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return;
 
   console.log(`catch-up Goal #${goalNumber}`);
-  const notes = await dispatchPlan(plan, token, { skipIfOpenPr: true });
+  const publisherNotes = await maybeRunPublisherLoop(plan, token);
+  const notes = [...publisherNotes, ...(await dispatchPlan(plan, token, { skipIfOpenPr: true }))];
   const shouldReport = notes.some((n) => !isIdleDispatchNote(n));
   if (!shouldReport) {
     if (await finishIdleGoalDispatch(goalNumber, comments, token)) return;

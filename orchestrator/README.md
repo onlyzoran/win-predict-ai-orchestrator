@@ -13,6 +13,7 @@ orchestrator/
   schema/review.schema.json
   src/run.ts
   src/visual-review.ts       # browser review: preview poll + Playwright MCP
+  src/publisher-loop.ts      # ui/icons: publish → bump app/admin, фазы в Goal
   src/products.ts            # лейбл продукта → registry
   ops/cursor-worker.service  # systemd: My Machines worker
   ops/board-watch.timer      # systemd: In Progress (работа + релиз по фразе)
@@ -66,4 +67,5 @@ orchestrator/
 | decompose | local `Agent.prompt` |
 | dispatch | issues + slash `/new-icon` или My Machines `worker.md` |
 | review | local `Agent.prompt` (`reviewer.md`) по PR; ui/app/admin/sales + demo → Playwright MCP; pass/blocked → Review, changes → воркер MODE B |
+| publish | publisher loop: ui/icons PR → npm prerelease → bump app/admin; state в Goal; catch-up повторяет при ошибке / новом commit |
 | watch | systemd timer на VPS: In Progress → оркестратор/воркер; после PR ui/icons → prerelease + bump app/admin; In Progress + фраза про релиз → bump версии + ченджлог + merge (+ publish/promote для библиотек) → Done |

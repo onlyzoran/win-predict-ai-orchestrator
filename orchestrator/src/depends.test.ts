@@ -16,8 +16,39 @@ describe("isDependencyMet", () => {
   });
 
   it("cross-repo open PR met", () => {
+    const feed = { id: "feed-1", repo: "onlyzoran/shoppable-feed" };
+    const appFeed = { id: "app-1", repo: "onlyzoran/win-predict-ai", depends_on: ["feed-1"] };
     assert.equal(
-      isDependencyMet({ url: "https://github.com/o/r/issues/1", closed: false }, ui, app, true),
+      isDependencyMet(
+        { url: "https://github.com/onlyzoran/shoppable-feed/pull/1", closed: false },
+        feed,
+        appFeed,
+        true,
+      ),
+      true,
+    );
+  });
+
+  it("cross-repo library needs prerelease publish", () => {
+    const uiLib = { id: "ui-1", repo: "onlyzoran/win-predict-ai-ui" };
+    assert.equal(
+      isDependencyMet(
+        { url: "https://github.com/onlyzoran/win-predict-ai-ui/pull/1", closed: false },
+        uiLib,
+        app,
+        true,
+        { prereleaseReady: () => false },
+      ),
+      false,
+    );
+    assert.equal(
+      isDependencyMet(
+        { url: "https://github.com/onlyzoran/win-predict-ai-ui/pull/1", closed: false },
+        uiLib,
+        app,
+        true,
+        { prereleaseReady: () => true },
+      ),
       true,
     );
   });
