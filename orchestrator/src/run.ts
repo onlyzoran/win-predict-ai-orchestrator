@@ -52,6 +52,7 @@ import {
 } from "./release.js";
 import { goalQueueWaiting, pickGoalQueueHead } from "./goal-queue.js";
 import {
+  isPostPromoteWorkingEcho,
   REVIEWING_LABEL,
   shouldHaveReviewingLabel,
   shouldHaveWorkingLabel,
@@ -586,6 +587,17 @@ function lastGoalDispatchState(comments: IssueComment[]): DispatchState | undefi
   for (const comment of [...comments].reverse()) {
     const state = parseDispatchState(comment.body);
     if (state && !state.taskId) return state;
+  }
+  return undefined;
+}
+
+/** Goal-level dispatch for phase labels; skips post-promote «Воркеры.» echo. */
+function goalDispatchStateForLabels(comments: IssueComment[]): DispatchState | undefined {
+  for (const comment of [...comments].reverse()) {
+    const state = parseDispatchState(comment.body);
+    if (!state || state.taskId) continue;
+    if (state.phase === "working" && isPostPromoteWorkingEcho(comment.body)) continue;
+    return state;
   }
   return undefined;
 }
@@ -1749,18 +1761,18 @@ async function finishIdleGoalDispatch(goalNumber: number, comments: IssueComment
   return false;
 }
 
-async function maybePromoteGoal(goalNumber: number, token: string): Promise<void> {
+async function maybePromoteGoal(goalNumber: number, token: string): Promise<boolean> {
   const comments = listIssueComments(GOAL_REPO, goalNumber, token);
-  if (lastGoalDispatchState(comments)?.phase === "review") return;
+  if (lastGoalDispatchState(comments)?.phase === "review") return false;
   const plan = extractStoredPlan(comments, goalNumber);
-  if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return;
+  if (!plan || plan.status !== "ready" || plan.tasks.length === 0) return false;
   for (const task of plan.tasks) {
     const progress = taskProgress(task, plan.goal_number, token);
-    if (!progress) return;
+    if (!progress) return false;
     if (progress.closed) continue;
     const state = lastDispatchStateForTask(comments, task.id);
-    if (state?.phase !== "review") return;
-    if (state.reviewVerdict === "changes") return;
+    if (state?.phase !== "review") return false;
+    if (state.reviewVerdict === "changes") return false;
   }
   addToProject(goalUrl(goalNumber), "Review", token);
   const prsByTask = collectOpenPrsForGoal(plan, token);
@@ -1774,6 +1786,7 @@ async function maybePromoteGoal(goalNumber: number, token: string): Promise<void
   await notifyTelegram(
     `Goal #${goalNumber}: Review, нужна приёмка\n${goalUrl(goalNumber)}${allPrUrls.length ? `\n${allPrUrls.join("\n")}` : ""}`,
   );
+  return true;
 }
 
 async function settleWithReviewer(
@@ -2679,8 +2692,14 @@ async function commentDispatch(
   const allSkipped = notes.length > 0 && notes.every(isIdleDispatchNote);
   const bounced = notes.some((n) => n.includes("review changes"));
   const waiting = notes.some((n) => n.includes("жду PR") || n.includes(" — жду "));
+  let promotedToReview = false;
   if (!failed && !allSkipped && !bounced && !waiting) {
-    await maybePromoteGoal(goalNumber, token);
+    promotedToReview = await maybePromoteGoal(goalNumber, token);
+  }
+  if (promotedToReview) {
+    const fresh = listIssueComments(GOAL_REPO, goalNumber, token);
+    syncGoalPhaseLabels(goalNumber, goalDispatchStateForLabels(fresh), token);
+    return !failed && !allSkipped;
   }
   const state: DispatchState = failed
     ? { phase: "error", at: new Date().toISOString() }
@@ -3512,7 +3531,7 @@ async function watchBoard(): Promise<void> {
 
     for (const goal of goals) {
       const comments = listIssueComments(goal.repo, goal.number, token);
-      syncGoalPhaseLabels(goal.number, lastGoalDispatchState(comments), token);
+      syncGoalPhaseLabels(goal.number, goalDispatchStateForLabels(comments), token);
     }
 
     for (const goal of waiting) {

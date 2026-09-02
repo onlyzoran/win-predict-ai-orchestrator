@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { shouldHaveReviewingLabel, shouldHaveWorkingLabel } from "./goal-working-label.js";
+import {
+  isPostPromoteWorkingEcho,
+  shouldHaveReviewingLabel,
+  shouldHaveWorkingLabel,
+} from "./goal-working-label.js";
 
 describe("shouldHaveWorkingLabel", () => {
   const now = Date.parse("2026-01-01T01:00:00.000Z");
@@ -72,6 +76,32 @@ describe("shouldHaveReviewingLabel", () => {
         { phase: "working", at: "2026-01-01T00:59:00.000Z" },
         now,
         staleMs,
+      ),
+      false,
+    );
+  });
+});
+
+describe("isPostPromoteWorkingEcho", () => {
+  it("true for Воркеры + review pass only", () => {
+    assert.equal(
+      isPostPromoteWorkingEcho(
+        [
+          "<!-- orchestrator-dispatch -->",
+          '<!-- orchestrator-state:{"phase":"working"} -->',
+          "**Воркеры.**",
+          "",
+          "- sales-price-comparison-ui — review pass — https://github.com/x/pull/7",
+        ].join("\n"),
+      ),
+      true,
+    );
+  });
+
+  it("false when note implies active worker", () => {
+    assert.equal(
+      isPostPromoteWorkingEcho(
+        ["**Воркеры.**", "", "- ui-home — sdk воркер на машине"].join("\n"),
       ),
       false,
     );

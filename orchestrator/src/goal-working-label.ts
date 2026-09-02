@@ -35,3 +35,18 @@ export function shouldHaveReviewingLabel(
 ): boolean {
   return isActivePhaseLabel(state, "reviewing", now, staleMs);
 }
+
+/** Echo after maybePromoteGoal: «Воркеры.» + только итог ревью, без новой работы. */
+export function isPostPromoteWorkingEcho(body: string): boolean {
+  if (!/\*\*Воркеры\.\*\*/.test(body)) return false;
+  const notes = body
+    .split("\n")
+    .filter((line) => line.startsWith("- "))
+    .map((line) => line.slice(2).trim());
+  if (!notes.length) return false;
+  return notes.every(
+    (note) =>
+      /review (pass|blocked|changes)/i.test(note) ||
+      /уже (закрыт|смержен|запускали)/i.test(note),
+  );
+}
