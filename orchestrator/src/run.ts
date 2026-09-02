@@ -44,6 +44,7 @@ import {
 } from "./release.js";
 import { goalQueueWaiting, pickGoalQueueHead } from "./goal-queue.js";
 import { IDLE_DISPATCH_HINT, recentlyIdleDispatchNotified, taskOpenPrNeedsReview } from "./goal-idle.js";
+import { formatHumanGatesForReviewer } from "./human-gates.js";
 import {
   collectPreviewUrls,
   formatBrowserReviewBlock,
@@ -1446,6 +1447,7 @@ async function runReviewer(
   prUrls: string[],
   token: string,
   extra = "",
+  humanGates: string[] = [],
 ): Promise<Review> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
@@ -1456,6 +1458,7 @@ async function runReviewer(
     : "";
   const prBlocks = prUrls.map((url) => gatherPrContext(url, token));
   const failedChecks = prBlocks.some((block) => block.checksFailed);
+  const humanGatesBlock = formatHumanGatesForReviewer(humanGates);
   const browserReview = needsBrowserReview(task, prUrls, goalNumber, extra);
   let browserBlock = "";
   let mcpServers: ReturnType<typeof playwrightMcpServers> | undefined;
@@ -1482,6 +1485,7 @@ async function runReviewer(
     "",
     "Тело задачи:",
     task.body,
+    humanGatesBlock ? `\n${humanGatesBlock}` : "",
     extra,
     "",
     prBlocks.map((block) => block.text).join("\n\n---\n\n"),
@@ -1676,6 +1680,7 @@ async function settleWithReviewer(
     ),
   );
   const comments = listIssueComments(GOAL_REPO, goalNumber, token);
+  const humanGates = extractStoredPlan(comments, goalNumber)?.human_gates ?? [];
   const previousChanges = countReviewChangesForTask(comments, task.id);
   const roundCap =
     previousChanges >= REVIEW_MAX_CHANGES
@@ -1694,6 +1699,7 @@ async function settleWithReviewer(
       prUrls,
       token,
       `${roundCap}${iconGate}\n\nСдача воркера:\n${ctx.source}`,
+      humanGates,
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
