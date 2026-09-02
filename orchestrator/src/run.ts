@@ -51,6 +51,7 @@ import {
   stripPrerelease,
 } from "./release.js";
 import { goalQueueWaiting, pickGoalQueueHead } from "./goal-queue.js";
+import { shouldHaveWorkingLabel, WORKING_LABEL } from "./goal-working-label.js";
 import { IDLE_DISPATCH_HINT, recentlyIdleDispatchNotified, taskOpenPrNeedsReview } from "./goal-idle.js";
 import { formatHumanGatesForReviewer } from "./human-gates.js";
 import {
@@ -671,13 +672,10 @@ function formatDispatchComment(state: DispatchState, lines: string[]): string {
 }
 
 function claimWorking(repo: string, issueNumber: number, token: string): void {
-  commentOnIssue(
-    repo,
+  commentGoalDispatch(
     issueNumber,
-    formatDispatchComment(
-      { phase: "working", at: new Date().toISOString() },
-      ["", "**В работе.** Карточка In Progress. Не дублирую запуск."],
-    ),
+    { phase: "working", at: new Date().toISOString() },
+    ["", "**В работе.** Карточка In Progress. Не дублирую запуск."],
     token,
   );
 }
@@ -688,13 +686,10 @@ function claimReviewing(
   token: string,
   state: Pick<DispatchState, "agentId" | "runId" | "prUrls" | "headRef">,
 ): void {
-  commentOnIssue(
-    repo,
+  commentGoalDispatch(
     issueNumber,
-    formatDispatchComment(
-      { phase: "reviewing", ...state, at: new Date().toISOString() },
-      ["", "**Ревьюер смотрит.** PR сдан, карточка In Progress. Не дублирую запуск."],
-    ),
+    { phase: "reviewing", ...state, at: new Date().toISOString() },
+    ["", "**Ревьюер смотрит.** PR сдан, карточка In Progress. Не дублирую запуск."],
     token,
   );
 }
@@ -705,13 +700,10 @@ function claimReleasing(
   token: string,
   state: Pick<DispatchState, "prUrls"> = {},
 ): void {
-  commentOnIssue(
-    repo,
+  commentGoalDispatch(
     issueNumber,
-    formatDispatchComment(
-      { phase: "releasing", ...state, at: new Date().toISOString() },
-      ["", "**Релиз.** Ченджлог → merge → Done. Не дублирую запуск."],
-    ),
+    { phase: "releasing", ...state, at: new Date().toISOString() },
+    ["", "**Релиз.** Ченджлог → merge → Done. Не дублирую запуск."],
     token,
   );
 }
@@ -1127,6 +1119,51 @@ function ensureGoalProductLabel(issueNumber: number, productId: string, token: s
     ["issue", "edit", String(issueNumber), "-R", GOAL_REPO, "--add-label", entry.label],
     token,
   );
+}
+
+function ensureWorkingLabel(token: string): void {
+  gh(
+    [
+      "label",
+      "create",
+      WORKING_LABEL,
+      "-R",
+      GOAL_REPO,
+      "--color",
+      "fbca04",
+      "--description",
+      "оркестратор сейчас работает над Goal",
+      "--force",
+    ],
+    token,
+  );
+}
+
+function syncGoalWorkingLabel(issueNumber: number, state: DispatchState | undefined, token: string): void {
+  ensureWorkingLabel(token);
+  const labels = fetchIssue(GOAL_REPO, issueNumber, token).labels.map((l) => l.name);
+  const want = shouldHaveWorkingLabel(state, Date.now(), WORKING_STALE_MS);
+  if (want && !labels.includes(WORKING_LABEL)) {
+    gh(["issue", "edit", String(issueNumber), "-R", GOAL_REPO, "--add-label", WORKING_LABEL], token);
+  } else if (!want && labels.includes(WORKING_LABEL)) {
+    gh(["issue", "edit", String(issueNumber), "-R", GOAL_REPO, "--remove-label", WORKING_LABEL], token);
+  }
+}
+
+function commentGoalDispatch(
+  issueNumber: number,
+  state: DispatchState,
+  lines: string[],
+  token?: string,
+): void {
+  const t = token ?? commentToken();
+  const body = formatDispatchComment(state, lines);
+  if (!t) {
+    console.error(body);
+    return;
+  }
+  commentOnIssue(GOAL_REPO, issueNumber, body, t);
+  syncGoalWorkingLabel(issueNumber, state, t);
 }
 
 function graphql<T>(token: string, query: string, variables: Record<string, string | null | undefined>): T {
@@ -1681,12 +1718,11 @@ async function maybePromoteGoal(goalNumber: number, token: string): Promise<void
   addToProject(goalUrl(goalNumber), "Review", token);
   const prsByTask = collectOpenPrsForGoal(plan, token);
   const allPrUrls = flattenPrUrls(prsByTask);
-  commentOnGoal(
+  commentGoalDispatch(
     goalNumber,
-    formatDispatchComment(
-      { phase: "review", at: new Date().toISOString(), prUrls: allPrUrls },
-      formatGoalAcceptanceComment(plan, prsByTask, ACCEPT_HINT),
-    ),
+    { phase: "review", at: new Date().toISOString(), prUrls: allPrUrls },
+    formatGoalAcceptanceComment(plan, prsByTask, ACCEPT_HINT),
+    token,
   );
   await notifyTelegram(
     `Goal #${goalNumber}: Review, нужна приёмка\n${goalUrl(goalNumber)}${allPrUrls.length ? `\n${allPrUrls.join("\n")}` : ""}`,
@@ -1724,28 +1760,26 @@ async function settleWithReviewer(
   };
 
   if (!prUrls.length) {
-    commentOnGoal(
+    commentGoalDispatch(
       goalNumber,
-      formatDispatchComment(
-        { phase: "review", ...baseState, reviewVerdict: "blocked", at: new Date().toISOString() },
-        [
-          `\`${task.id}\` · ${task.repo}`,
-          ctx.source,
-          "",
-          `**Нужна приёмка.** PR нет — реши сам. ${ACCEPT_HINT}`,
-          prLines,
-        ],
-      ),
+      { phase: "review", ...baseState, reviewVerdict: "blocked", at: new Date().toISOString() },
+      [
+        `\`${task.id}\` · ${task.repo}`,
+        ctx.source,
+        "",
+        `**Нужна приёмка.** PR нет — реши сам. ${ACCEPT_HINT}`,
+        prLines,
+      ],
+      token,
     );
     return `${task.id} — review blocked — нет PR`;
   }
 
-  commentOnGoal(
+  commentGoalDispatch(
     goalNumber,
-    formatDispatchComment(
-      { phase: "reviewing", ...baseState, at: new Date().toISOString() },
-      ["", `**Ревьюер смотрит** \`${task.id}\`. Не дублирую запуск.`],
-    ),
+    { phase: "reviewing", ...baseState, at: new Date().toISOString() },
+    ["", `**Ревьюер смотрит** \`${task.id}\`. Не дублирую запуск.`],
+    token,
   );
   const comments = listIssueComments(GOAL_REPO, goalNumber, token);
   const humanGates = extractStoredPlan(comments, goalNumber)?.human_gates ?? [];
@@ -1792,49 +1826,47 @@ async function settleWithReviewer(
   const at = new Date().toISOString();
   if (review.verdict === "changes") {
     addToProject(issueUrl, "In Progress", token);
-    commentOnGoal(
+    commentGoalDispatch(
       goalNumber,
-      formatDispatchComment(
-        {
-          phase: "review",
-          ...baseState,
-          reviewVerdict: "changes",
-          reviewRound: previousChanges + 1,
-          at,
-        },
-        [
-          `\`${task.id}\` · ${task.repo}`,
-          ctx.source,
-          "",
-          `**Ревьюер: правки** (раунд ${previousChanges + 1}/${REVIEW_MAX_CHANGES}). Goal In Progress — воркер MODE B на следующем тике.`,
-          prLines,
-          "",
-          review.summary,
-          ...findingLines,
-        ],
-      ),
-    );
-    await notifyTelegram(`Ревьюер: правки ${task.id}\n${issueUrl}\n${review.summary}`);
-    return `${task.id} — review changes — ${prUrls.join(" ")}`;
-  }
-
-  commentOnGoal(
-    goalNumber,
-    formatDispatchComment(
-      { phase: "review", ...baseState, reviewVerdict: review.verdict, reviewRound: previousChanges, at },
+      {
+        phase: "review",
+        ...baseState,
+        reviewVerdict: "changes",
+        reviewRound: previousChanges + 1,
+        at,
+      },
       [
         `\`${task.id}\` · ${task.repo}`,
         ctx.source,
         "",
-        review.verdict === "pass"
-          ? `**Кусок готов к приёмке.** ${ACCEPT_HINT}`
-          : `**Ревьюер заблокировал** (нужен человек). ${ACCEPT_HINT}`,
+        `**Ревьюер: правки** (раунд ${previousChanges + 1}/${REVIEW_MAX_CHANGES}). Goal In Progress — воркер MODE B на следующем тике.`,
         prLines,
         "",
         review.summary,
         ...findingLines,
       ],
-    ),
+      token,
+    );
+    await notifyTelegram(`Ревьюер: правки ${task.id}\n${issueUrl}\n${review.summary}`);
+    return `${task.id} — review changes — ${prUrls.join(" ")}`;
+  }
+
+  commentGoalDispatch(
+    goalNumber,
+    { phase: "review", ...baseState, reviewVerdict: review.verdict, reviewRound: previousChanges, at },
+    [
+      `\`${task.id}\` · ${task.repo}`,
+      ctx.source,
+      "",
+      review.verdict === "pass"
+        ? `**Кусок готов к приёмке.** ${ACCEPT_HINT}`
+        : `**Ревьюер заблокировал** (нужен человек). ${ACCEPT_HINT}`,
+      prLines,
+      "",
+      review.summary,
+      ...findingLines,
+    ],
+    token,
   );
   await notifyTelegram(
     `Ревьюер: ${review.verdict} ${task.id}\n${issueUrl}\n${review.summary}\n${prUrls.join("\n")}`,
@@ -1850,24 +1882,23 @@ async function finishNewIconWithoutMachine(
   prUrls: string[],
 ): Promise<string> {
   const prLines = formatPrLinkLines(prUrls, goalNumber);
-  commentOnGoal(
+  commentGoalDispatch(
     goalNumber,
-    formatDispatchComment(
-      {
-        phase: "review",
-        taskId: task.id,
-        prUrls,
-        reviewVerdict: "blocked",
-        at: new Date().toISOString(),
-      },
-      [
-        `\`${task.id}\` · ${task.repo}`,
-        "Slash `/new-icon` уже открыл PR с вариантами. Это не слот My Machines (`win-predict-vps`).",
-        "",
-        `**Нужна приёмка.** Выбери вариант A–D комментарием в PR. ${ACCEPT_HINT}`,
-        prLines,
-      ],
-    ),
+    {
+      phase: "review",
+      taskId: task.id,
+      prUrls,
+      reviewVerdict: "blocked",
+      at: new Date().toISOString(),
+    },
+    [
+      `\`${task.id}\` · ${task.repo}`,
+      "Slash `/new-icon` уже открыл PR с вариантами. Это не слот My Machines (`win-predict-vps`).",
+      "",
+      `**Нужна приёмка.** Выбери вариант A–D комментарием в PR. ${ACCEPT_HINT}`,
+      prLines,
+    ],
+    token,
   );
   await notifyTelegram(`Иконки: выбор в PR, не VPS\n${goalUrl(goalNumber)}\n${prUrls.join("\n")}`);
   await maybePromoteGoal(goalNumber, token);
@@ -2457,16 +2488,15 @@ async function reportTaskFailure(
   console.error(err);
   await notifyTelegram(`Ошибка воркера: ${taskId}\n${goalUrl(goalNumber)}\n${message.slice(0, 500)}`);
   try {
-    commentOnGoal(
+    commentGoalDispatch(
       goalNumber,
-      formatDispatchComment(
-        { phase: "error", taskId, at: new Date().toISOString() },
-        [
-          `Не удалось запустить воркера \`${taskId}\`: ${message}`,
-          "",
-          "Повтор: комментарий в Goal и карточку верни в In Progress.",
-        ],
-      ),
+      { phase: "error", taskId, at: new Date().toISOString() },
+      [
+        `Не удалось запустить воркера \`${taskId}\`: ${message}`,
+        "",
+        "Повтор: комментарий в Goal и карточку верни в In Progress.",
+      ],
+      token,
     );
   } catch {
     /* ignore */
@@ -2486,6 +2516,7 @@ function postNonReadyPlan(issue: IssueCommentEvent["issue"], plan: Plan, token: 
     ].join("\n"),
   );
   addToProject(issue.html_url, "Review", token);
+  syncGoalWorkingLabel(issue.number, undefined, token);
 }
 
 async function decompose(
@@ -2604,16 +2635,13 @@ async function commentDispatch(
   if (!failed && !allSkipped && !bounced && !waiting) {
     await maybePromoteGoal(goalNumber, token);
   }
-  const prefix = failed
-    ? formatDispatchComment(
-        { phase: "error", at: new Date().toISOString() },
-        ["**Воркеры (есть ошибки).** Верни карточку в In Progress или `/orchestrate`."],
-      )
-    : formatDispatchComment(
-        { phase: "working", at: new Date().toISOString() },
-        ["**Воркеры.**"],
-      );
-  commentOnGoal(goalNumber, `${prefix}\n\n${notes.map((n) => `- ${n}`).join("\n")}`);
+  const state: DispatchState = failed
+    ? { phase: "error", at: new Date().toISOString() }
+    : { phase: "working", at: new Date().toISOString() };
+  const lines = failed
+    ? ["**Воркеры (есть ошибки).** Верни карточку в In Progress или `/orchestrate`."]
+    : ["**Воркеры.**"];
+  commentGoalDispatch(goalNumber, state, [...lines, "", ...notes.map((n) => `- ${n}`)], token);
   const digest = notes.map((n) => `- ${n}`).join("\n");
   if (failed) await notifyTelegram(`Goal #${goalNumber}: ошибки\n${goalIssueUrl}\n${digest}`);
   else if (!allSkipped) await notifyTelegram(`Goal #${goalNumber}: воркеры\n${goalIssueUrl}\n${digest}`);
@@ -2852,14 +2880,13 @@ async function handleGoalSyncMain(item: BoardIssue, plan: Plan, token: string): 
   }
   if (!prUrls.length) {
     addToProject(item.url, "Review", token);
-    commentOnGoal(
+    commentGoalDispatch(
       item.number,
-      formatDispatchComment(
-        { phase: "review", at: new Date().toISOString() },
-        [
-          "**Sync main.** Открытого PR нет — вернул в Review. Правки: комментарий + In Progress. Релиз: «релизь» + In Progress.",
-        ],
-      ),
+      { phase: "review", at: new Date().toISOString() },
+      [
+        "**Sync main.** Открытого PR нет — вернул в Review. Правки: комментарий + In Progress. Релиз: «релизь» + In Progress.",
+      ],
+      token,
     );
     await notifyTelegram(`Sync main: нет PR → Review\n${item.url}`);
     return;
@@ -2894,16 +2921,15 @@ async function handleGoalSyncMain(item: BoardIssue, plan: Plan, token: string): 
   }
 
   addToProject(item.url, "Review", token);
-  commentOnGoal(
+  commentGoalDispatch(
     item.number,
-    formatDispatchComment(
-      { phase: "review", prUrls, at: new Date().toISOString() },
-      [
-        "**Sync main.** Ветки PR актуальны относительно base (или подтянул без конфликта). Карточка снова в Review.",
-        ...notes.map((n) => `- ${n}`),
-        ACCEPT_HINT,
-      ],
-    ),
+    { phase: "review", prUrls, at: new Date().toISOString() },
+    [
+      "**Sync main.** Ветки PR актуальны относительно base (или подтянул без конфликта). Карточка снова в Review.",
+      ...notes.map((n) => `- ${n}`),
+      ACCEPT_HINT,
+    ],
+    token,
   );
   await notifyTelegram(`Sync main: ок → Review\n${item.url}`);
 }
@@ -3265,12 +3291,11 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
 
   if (!plan || plan.status !== "ready" || plan.tasks.length === 0) {
     addToProject(item.url, "Done", token);
-    commentOnGoal(
+    commentGoalDispatch(
       item.number,
-      formatDispatchComment(
-        { phase: "review", at: new Date().toISOString() },
-        ["**Готово.** Плана нет — Goal в Done."],
-      ),
+      { phase: "review", at: new Date().toISOString() },
+      ["**Готово.** Плана нет — Goal в Done."],
+      token,
     );
     return;
   }
@@ -3334,15 +3359,14 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
       failed += 1;
       if (isReleaseConflict(err)) {
         addToProject(item.url, "In Progress", token);
-        commentOnGoal(
+        commentGoalDispatch(
           item.number,
-          formatDispatchComment(
-            { phase: "error", at: new Date().toISOString() },
-            [
-              "**Релиз: конфликт с main.** Goal → In Progress. Воркер MODE B подтянет main.",
-              ...notes.map((n) => `- ${n}`),
-            ],
-          ),
+          { phase: "error", at: new Date().toISOString() },
+          [
+            "**Релиз: конфликт с main.** Goal → In Progress. Воркер MODE B подтянет main.",
+            ...notes.map((n) => `- ${n}`),
+          ],
+          token,
         );
         return;
       }
@@ -3351,24 +3375,22 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
 
   if (failed === 0) {
     addToProject(item.url, "Done", token);
-    commentOnGoal(
+    commentGoalDispatch(
       item.number,
-      formatDispatchComment(
-        { phase: "review", at: new Date().toISOString() },
-        ["**Готово.** PR смержены — Goal в Done.", ...notes.map((n) => `- ${n}`)],
-      ),
+      { phase: "review", at: new Date().toISOString() },
+      ["**Готово.** PR смержены — Goal в Done.", ...notes.map((n) => `- ${n}`)],
+      token,
     );
     await notifyTelegram(`Goal #${item.number}: Done\n${item.url}`);
   } else {
-    commentOnGoal(
+    commentGoalDispatch(
       item.number,
-      formatDispatchComment(
-        { phase: "error", at: new Date().toISOString() },
-        [
-          "**Релиз Goal неполный.** Поправь и снова In Progress + «релизь».",
-          ...notes.map((n) => `- ${n}`),
-        ],
-      ),
+      { phase: "error", at: new Date().toISOString() },
+      [
+        "**Релиз Goal неполный.** Поправь и снова In Progress + «релизь».",
+        ...notes.map((n) => `- ${n}`),
+      ],
+      token,
     );
     await notifyTelegram(`Goal #${item.number}: релиз неполный\n${item.url}\n${notes.join("\n")}`);
   }
@@ -3440,6 +3462,11 @@ async function watchBoard(): Promise<void> {
     console.log(
       `watch: ${goals.length} goal in In Progress, head #${head?.number ?? "none"}, waiting ${waiting.map((g) => g.number).join(", ") || "none"}`,
     );
+
+    for (const goal of goals) {
+      const comments = listIssueComments(goal.repo, goal.number, token);
+      syncGoalWorkingLabel(goal.number, lastGoalDispatchState(comments), token);
+    }
 
     for (const goal of waiting) {
       const comments = listIssueComments(goal.repo, goal.number, token);
@@ -3557,12 +3584,11 @@ async function main(): Promise<void> {
             .join(", ")})`
         : "";
     const message = err instanceof Error ? err.message : String(err);
-    commentOnGoal(
+    commentGoalDispatch(
       issue.number,
-      formatDispatchComment(
-        { phase: "error", at: new Date().toISOString() },
-        [`Оркестратор не смог собрать план: ${message}${extra}`],
-      ),
+      { phase: "error", at: new Date().toISOString() },
+      [`Оркестратор не смог собрать план: ${message}${extra}`],
+      token,
     );
     await notifyTelegram(`Goal #${issue.number}: план не собрался\n${issue.html_url}\n${message.slice(0, 500)}${extra}`);
     process.exitCode = err instanceof CursorAgentError ? 1 : 2;
