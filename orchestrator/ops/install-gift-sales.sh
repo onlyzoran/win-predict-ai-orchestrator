@@ -24,8 +24,8 @@ install -m 644 "$ROOT/orchestrator/ops/gift-sales.service.example" "$UNIT"
 ln -sf "$IP_SITE" /etc/nginx/sites-enabled/gift-sales-ip
 
 if [[ -f $ADMIN_SITE ]] && ! grep -q 'snippets/gift-sales.conf' "$ADMIN_SITE"; then
-  sed -i '/location \^~ \/ops\//,/add_header Cache-Control/{
-    /add_header Cache-Control/a\
+  sed -i '/location \^~ \/ops\//,/^[[:space:]]*}/{
+    /^[[:space:]]*}/a\
 \
     include /etc/nginx/snippets/gift-sales.conf;
   }' "$ADMIN_SITE"
