@@ -8,6 +8,8 @@ set -euo pipefail
 ROOT=/opt/cursor-workers/win-predict-ai-orchestrator
 SNIPPET=/etc/nginx/snippets/gift-sales.conf
 IP_SITE=/etc/nginx/sites-available/gift-sales-ip
+IP_SSL_SITE=/etc/nginx/sites-available/gift-sales-ip-ssl
+IP_SSL_EXAMPLE="$ROOT/orchestrator/ops/gift-sales-ip-ssl.nginx.conf.example"
 PREVIEW_ROOT=/var/www/gift-sales-preview
 UNIT=/etc/systemd/system/gift-sales.service
 ADMIN_SITE=/etc/nginx/sites-enabled/win-predict-ai-admin
@@ -23,6 +25,22 @@ install -m 644 "$ROOT/orchestrator/ops/gift-sales-ip.nginx.conf" "$IP_SITE"
 install -m 644 "$ROOT/orchestrator/ops/gift-sales.service.example" "$UNIT"
 ln -sf "$IP_SITE" /etc/nginx/sites-enabled/gift-sales-ip
 
+CERT_LIVE=""
+for name in hq.win-predict-ai.com win-predict-ai.com secrets.win-predict-ai.com; do
+  if [[ -f /etc/letsencrypt/live/$name/fullchain.pem && -f /etc/letsencrypt/live/$name/privkey.pem ]]; then
+    CERT_LIVE=/etc/letsencrypt/live/$name
+    break
+  fi
+done
+if [[ -n $CERT_LIVE && -f $IP_SSL_EXAMPLE ]]; then
+  sed -e "s|CERT_FULLCHAIN|$CERT_LIVE/fullchain.pem|g" -e "s|CERT_KEY|$CERT_LIVE/privkey.pem|g" \
+    "$IP_SSL_EXAMPLE" > "$IP_SSL_SITE"
+  chmod 644 "$IP_SSL_SITE"
+  ln -sf "$IP_SSL_SITE" /etc/nginx/sites-enabled/gift-sales-ip-ssl
+else
+  echo "TLS default для IP не ставлю — нет let’s encrypt cert (https://IP иначе попадёт в HQ SPA)."
+fi
+
 if [[ -f $ADMIN_SITE ]] && ! grep -q 'snippets/gift-sales.conf' "$ADMIN_SITE"; then
   sed -i '/location \^~ \/ops\//,/^[[:space:]]*}/{
     /^[[:space:]]*}/a\
@@ -33,11 +51,14 @@ fi
 
 echo "Nginx snippet: $SNIPPET"
 echo "HTTP IP site:  $IP_SITE → sites-enabled/gift-sales-ip"
+if [[ -n ${CERT_LIVE:-} ]]; then
+  echo "HTTPS IP default: $IP_SSL_SITE (cert $CERT_LIVE) — чтобы не отдавать HQ SPA"
+fi
 echo "Preview root:  $PREVIEW_ROOT"
 echo "Systemd unit:  $UNIT (PORT=3002)"
 echo
 echo "Проверка: nginx -t && systemctl reload nginx"
-echo "URL: http://202.71.15.138/gift-sales/ и https://202.71.15.138/gift-sales/"
+echo "URL: http://202.71.15.138/gift-sales/ (demo тоже HTTP; https://IP без своего имени)"
 echo
 echo "После npm run build в /opt/cursor-workers/gift-sales (basePath /gift-sales):"
 echo "    systemctl daemon-reload && systemctl enable --now gift-sales.service"

@@ -7,6 +7,10 @@
 # TLS after HTTP works:
 #   certbot --nginx -d hq.win-predict-ai.com
 # (certbot adds the 443 server block and certificates)
+#
+# Не ставь default_server на 443. Иначе https://<ip>/ любой путь отдаёт эту SPA
+# (try_files → index.html) — demo gift-sales выглядит как Win Predict HQ.
+# Default TLS для IP: gift-sales-ip-ssl (install-gift-sales.sh).
 
 server {
     listen 80;

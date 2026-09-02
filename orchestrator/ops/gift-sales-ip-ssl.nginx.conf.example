@@ -1,0 +1,27 @@
+# TLS default_server для https://202.71.15.138/ops/ и /gift-sales/
+# Иначе nginx отдаёт первый 443-vhost (HQ SPA) на любой путь.
+# Сертификат на имя, не на IP — браузер покажет предупреждение.
+# Публичные demo URL остаются HTTP. Плейсхолдеры подставляет install-gift-sales.sh.
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name 202.71.15.138 _;
+
+    ssl_certificate CERT_FULLCHAIN;
+    ssl_certificate_key CERT_KEY;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location = /ops {
+        return 301 /ops/;
+    }
+
+    location ^~ /ops/ {
+        alias /var/www/orchestrator-status/;
+        index index.html;
+        add_header Cache-Control "no-store";
+    }
+
+    include /etc/nginx/snippets/gift-sales.conf;
+}
