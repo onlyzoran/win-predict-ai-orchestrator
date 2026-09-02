@@ -1,6 +1,6 @@
 # Контракт Goal Issue
 
-Goal — одна высокоуровневая цель **продукта**. Живёт в этом штаб-репо. На доске одна карточка; оркестратор открывает **несколько PR** в рабочих репо (active — win-predict-ai, shoppable-feed и gift-sales). Child issues не создаются.
+Goal — одна высокоуровневая цель **продукта**. Живёт в этом штаб-репо. На доске одна карточка; оркестратор открывает **несколько PR** в рабочих репо (active — win-predict-ai, shoppable-feed, gift-sales, ios-games). Child issues не создаются.
 
 ## Продукты
 
@@ -10,7 +10,9 @@ Goal — одна высокоуровневая цель **продукта**. 
 | **shoppable-feed** | `shoppable-feed` | active — PR в `onlyzoran/shoppable-feed` |
 | **gift-sales** | `gift-sales` | active — PR в `onlyzoran/gift-sales` |
 | **telegram-bots** | `telegram-bots` | stub — Goal на доске, PR не открываются |
-| **ios-games** | `ios-games` | stub — шаблон `onlyzoran/ios-template-game`; PR после scaffold |
+| **ios-games** | `ios-games` | active — scaffold `onlyzoran/game-issue-<N>` из template, PR в game-репо |
+
+**ios-games:** In Progress → оркестратор создаёт `onlyzoran/game-issue-<номер>` из [ios-template-game](https://github.com/onlyzoran/ios-template-game) (маркер `<!-- orchestrator-game-repo:… -->`), менеджер — одна задача `game`, воркер открывает PR. Клон на VPS: `orchestrator/ops/ensure-game-worker.sh`.
 
 Реестр: [orchestrator/products/registry.json](../orchestrator/products/registry.json). Без лейбла продукта оркестратор считает Goal продуктом `win-predict-ai` (старые карточки). Старый префикс `product:…` тоже понимается.
 
@@ -36,7 +38,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 
 Лейбл продукта ставит шаблон. Любой issue в этом репо — Goal (лейбл `goal` не нужен). Поверхности, ограничения и критерии готовности менеджер выводит сам из Результата.
 
-**Stub-продукт** (bots/ios-games): Inbox → In Progress → комментарий `needs_human`, карточка в Review, PR нет.
+**Stub-продукт** (telegram-bots): Inbox → In Progress → комментарий `needs_human`, карточка в Review, PR нет.
 
 Старт (active): карточка Goal **Inbox → In Progress** (или комментарий `/orchestrate`). С нуля: `/orchestrate redo`.
 
@@ -64,7 +66,7 @@ Issues → **New issue** → выбери шаблон продукта (blank i
 | `shoppable-feed` | Goal | продукт shoppable-feed |
 | `gift-sales` | Goal | продукт gift-sales |
 | `telegram-bots` | Goal | продукт bots (stub) |
-| `ios-games` | Goal | продукт ios-games (stub) |
+| `ios-games` | Goal | продукт ios-games |
 
 Поверхности (ui, app, admin, …) — только в плане в комментарии Goal, отдельные лейблы не ставятся.
 

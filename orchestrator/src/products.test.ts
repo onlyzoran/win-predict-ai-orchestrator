@@ -97,8 +97,9 @@ test("loadProductRegistry: shipped file", () => {
   assert.equal(registry["win-predict-ai"]?.label, "win-predict-ai");
   assert.equal(registry["win-predict-ai"]?.board?.id, "PVT_kwHOAom_KM4BgVLq");
   assert.equal(registry["telegram-bots"]?.status, "stub");
-  assert.equal(registry["ios-games"]?.status, "stub");
+  assert.equal(registry["ios-games"]?.status, "active");
   assert.equal(registry["ios-games"]?.templateRepo, "onlyzoran/ios-template-game");
+  assert.equal(registry["ios-games"]?.surfaces.game?.trigger, "sdk");
   assert.equal(registry["shoppable-feed"]?.status, "active");
   assert.equal(registry["shoppable-feed"]?.surfaces.feed?.repo, "onlyzoran/shoppable-feed");
   assert.equal(registry["gift-sales"]?.status, "active");
@@ -111,6 +112,23 @@ test("getBoardProject: stub inherits win-predict-ai board", () => {
   assert.equal(getBoardProject("telegram-bots", registry).id, registry["win-predict-ai"]?.board?.id);
   assert.equal(getBoardProject("shoppable-feed", registry).id, registry["win-predict-ai"]?.board?.id);
   assert.equal(getBoardProject("gift-sales", registry).id, registry["win-predict-ai"]?.board?.id);
+});
+
+test("taskMatchesProduct: ios-games game repo", () => {
+  clearProductRegistryCache();
+  assert.equal(
+    taskMatchesProduct("ios-games", "game", "onlyzoran/game-issue-5", undefined, "onlyzoran/game-issue-5"),
+    true,
+  );
+  assert.equal(taskMatchesProduct("ios-games", "game", "onlyzoran/game-issue-6", undefined, "onlyzoran/game-issue-5"), false);
+  assert.equal(taskMatchesProduct("ios-games", "app", "onlyzoran/win-predict-ai"), false);
+});
+
+test("formatProductContext: ios-games with scaffold repo", () => {
+  clearProductRegistryCache();
+  const text = formatProductContext("ios-games", undefined, { gameRepo: "onlyzoran/game-issue-9" });
+  assert.match(text, /game-issue-9/);
+  assert.match(text, /одну/);
 });
 
 test("taskMatchesProduct", () => {

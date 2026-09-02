@@ -24,7 +24,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["ui", "icons", "data", "app", "admin", "ios", "feed", "sales"]
+        "enum": ["ui", "icons", "data", "app", "admin", "ios", "feed", "sales", "game"]
       },
       "uniqueItems": true
     },
@@ -60,19 +60,27 @@
         },
         "surface": {
           "type": "string",
-          "enum": ["ui", "icons", "data", "app", "admin", "ios", "feed", "sales"]
+          "enum": ["ui", "icons", "data", "app", "admin", "ios", "feed", "sales", "game"]
         },
         "repo": {
-          "type": "string",
-          "enum": [
-            "onlyzoran/win-predict-ai-ui",
-            "onlyzoran/win-predict-ai-icons",
-            "onlyzoran/win-predict-ai-data",
-            "onlyzoran/win-predict-ai",
-            "onlyzoran/win-predict-ai-admin",
-            "onlyzoran/win-predict-ai-ios",
-            "onlyzoran/shoppable-feed",
-            "onlyzoran/gift-sales"
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "onlyzoran/win-predict-ai-ui",
+                "onlyzoran/win-predict-ai-icons",
+                "onlyzoran/win-predict-ai-data",
+                "onlyzoran/win-predict-ai",
+                "onlyzoran/win-predict-ai-admin",
+                "onlyzoran/win-predict-ai-ios",
+                "onlyzoran/shoppable-feed",
+                "onlyzoran/gift-sales"
+              ]
+            },
+            {
+              "type": "string",
+              "pattern": "^onlyzoran/game-issue-[0-9]+$"
+            }
           ]
         },
         "title": { "type": "string", "minLength": 1 },

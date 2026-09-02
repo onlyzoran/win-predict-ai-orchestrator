@@ -54,6 +54,7 @@ import {
   waitForPreviewUrls,
 } from "./visual-review.js";
 import { goalRevisionPending } from "./goal-revision.js";
+import { ensureGameScaffold, isGameRepo } from "./scaffold.js";
 import { shouldReleaseForBoardPhase } from "./release-intent.js";
 import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
 import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
@@ -108,7 +109,7 @@ const REPOS = [
   "onlyzoran/shoppable-feed",
   "onlyzoran/gift-sales",
 ] as const;
-const SURFACES = ["ui", "icons", "data", "app", "admin", "ios", "feed", "sales"] as const;
+const SURFACES = ["ui", "icons", "data", "app", "admin", "ios", "feed", "sales", "game"] as const;
 const LABEL_META: Record<(typeof SURFACES)[number], { color: string; description: string }> = {
   ui: { color: "1d76db", description: "win-predict-ai-ui" },
   icons: { color: "fbca04", description: "win-predict-ai-icons" },
@@ -118,6 +119,7 @@ const LABEL_META: Record<(typeof SURFACES)[number], { color: string; description
   ios: { color: "e99695", description: "win-predict-ai-ios" },
   feed: { color: "006b75", description: "shoppable-feed" },
   sales: { color: "0052cc", description: "gift-sales" },
+  game: { color: "c2e0c6", description: "ios-games" },
 };
 const REPO_SURFACE: Record<(typeof REPOS)[number], Surface> = {
   "onlyzoran/win-predict-ai-ui": "ui",
@@ -157,7 +159,7 @@ type Review = {
 type Task = {
   id: string;
   surface: Surface;
-  repo: (typeof REPOS)[number];
+  repo: string;
   title: string;
   body: string;
   depends_on: string[];
@@ -960,11 +962,14 @@ function isSurface(value: unknown): value is Surface {
   return typeof value === "string" && (SURFACES as readonly string[]).includes(value);
 }
 
-function isRepo(value: unknown): value is Task["repo"] {
-  return typeof value === "string" && (REPOS as readonly string[]).includes(value);
+function isRepo(value: unknown, gameRepo?: string): value is string {
+  if (typeof value !== "string") return false;
+  if ((REPOS as readonly string[]).includes(value)) return true;
+  if (isGameRepo(value)) return !gameRepo || value === gameRepo;
+  return false;
 }
 
-function validatePlan(raw: unknown, goalNumber: number, productId?: string): Plan {
+function validatePlan(raw: unknown, goalNumber: number, productId?: string, gameRepo?: string): Plan {
   if (!raw || typeof raw !== "object") throw new Error("план не объект");
   const p = raw as Record<string, unknown>;
   const status = p.status;
@@ -986,10 +991,10 @@ function validatePlan(raw: unknown, goalNumber: number, productId?: string): Pla
     if (typeof t.id !== "string" || !/^[a-z0-9-]+$/.test(t.id)) {
       throw new Error(`task[${index}].id`);
     }
-    if (!isSurface(t.surface) || !isRepo(t.repo)) {
+    if (!isSurface(t.surface) || !isRepo(t.repo, gameRepo)) {
       throw new Error(`task[${index}] surface/repo`);
     }
-    if (productId && !taskMatchesProduct(productId, t.surface, t.repo)) {
+    if (productId && !taskMatchesProduct(productId, t.surface, t.repo, undefined, gameRepo)) {
       throw new Error(`task[${index}] не из продукта ${productId}`);
     }
     if (typeof t.title !== "string" || !t.title.trim()) throw new Error(`task[${index}].title`);
@@ -1069,7 +1074,7 @@ function ensureLabel(repo: string, name: Surface, token: string): void {
 const PRODUCT_LABEL_META: Record<string, { color: string; description: string }> = {
   "win-predict-ai": { color: "5319e7", description: "продукт win-predict-ai" },
   "telegram-bots": { color: "1d76db", description: "продукт telegram-bots (stub)" },
-  "ios-games": { color: "d93f0b", description: "продукт ios-games (stub)" },
+  "ios-games": { color: "d93f0b", description: "продукт ios-games" },
   "shoppable-feed": { color: "006b75", description: "продукт shoppable-feed" },
   "gift-sales": { color: "0052cc", description: "продукт gift-sales" },
 };
@@ -2294,7 +2299,11 @@ function postNonReadyPlan(issue: IssueCommentEvent["issue"], plan: Plan, token: 
   addToProject(issue.html_url, "Review", token);
 }
 
-async function decompose(issue: IssueCommentEvent["issue"], extra = ""): Promise<Plan> {
+async function decompose(
+  issue: IssueCommentEvent["issue"],
+  extra = "",
+  opts?: { gameRepo?: string },
+): Promise<Plan> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
 
@@ -2310,7 +2319,7 @@ async function decompose(issue: IssueCommentEvent["issue"], extra = ""): Promise
   const prompt = [
     manager,
     "",
-    formatProductContext(productId),
+    formatProductContext(productId, undefined, opts?.gameRepo ? { gameRepo: opts.gameRepo } : undefined),
     "",
     "Схема плана (соблюдай строго):",
     schema,
@@ -2337,7 +2346,19 @@ async function decompose(issue: IssueCommentEvent["issue"], extra = ""): Promise
   if (result.status !== "finished") {
     throw new Error(runFailureMessage(result));
   }
-  return validatePlan(extractJson(result.result ?? ""), issue.number, productId);
+  return validatePlan(extractJson(result.result ?? ""), issue.number, productId, opts?.gameRepo);
+}
+
+function prepareIosGamesScaffold(
+  issue: IssueCommentEvent["issue"],
+  productId: string,
+  token: string,
+): string | undefined {
+  if (productId !== "ios-games") return undefined;
+  const product = getProduct(productId);
+  if (!product.templateRepo) throw new Error("ios-games: нет templateRepo в registry");
+  const comments = listIssueComments(GOAL_REPO, issue.number, token);
+  return ensureGameScaffold(GOAL_REPO, issue.number, product.templateRepo, comments, token).repo;
 }
 
 function loadEvent(): IssueCommentEvent {
@@ -2459,7 +2480,8 @@ function publishPlan(plan: Plan, issue: IssueCommentEvent["issue"], token: strin
 async function runGoalFirst(issue: IssueCommentEvent["issue"], token: string, redo: boolean): Promise<void> {
   const productId = resolveProductId(issue.labels.map((l) => l.name));
   ensureGoalProductLabel(issue.number, productId, token);
-  const plan = await decompose(issue);
+  const gameRepo = prepareIosGamesScaffold(issue, productId, token);
+  const plan = await decompose(issue, "", gameRepo ? { gameRepo } : undefined);
   if (plan.status !== "ready") {
     postNonReadyPlan(issue, plan, token);
     await notifyTelegram(`Goal #${issue.number}: ${plan.status}\n${plan.summary}\n${issue.html_url}`);
@@ -2478,6 +2500,8 @@ async function runGoalRevision(
   token: string,
 ): Promise<void> {
   let plan = stored;
+  const productId = resolveProductId(issue.labels.map((l) => l.name));
+  const gameRepo = prepareIosGamesScaffold(issue, productId, token);
   try {
     plan = await decompose(
       issue,
@@ -2494,6 +2518,7 @@ async function runGoalRevision(
           ? `Комментарии человека после Review:\n${humanNotes}`
           : "Новых комментариев нет — перечитай Goal и child, доведи незакрытое.",
       ].join("\n"),
+      gameRepo ? { gameRepo } : undefined,
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

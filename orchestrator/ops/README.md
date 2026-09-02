@@ -14,6 +14,17 @@
 
 `gift-sales` — отдельный продукт, один клон: `git clone https://github.com/onlyzoran/gift-sales.git /opt/cursor-workers/gift-sales` (владелец `cursor-worker`). После этого перезапусти `cursor-worker.service` (в юните новый `--worker-dir`).
 
+**ios-games** — per-Goal репо `onlyzoran/game-issue-<N>`. После scaffold (комментарий `<!-- orchestrator-game-repo:… -->` на Goal) на VPS от root:
+
+```bash
+chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/ensure-game-worker.sh
+/opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/ensure-game-worker.sh onlyzoran/game-issue-42
+```
+
+Или задай `ORCHESTRATOR_VPS_SSH=root@<host>` на машине, где крутится оркестратор — scaffold вызовет скрипт по SSH.
+
+На VPS нет Xcode — воркер правит Swift/ресурсы и открывает PR; сборка на Mac человека.
+
 Прод и preview: `http://202.71.15.138/gift-sales/` и `…/preview/issue-<N>/`. Установка nginx + systemd: `orchestrator/ops/install-gift-sales.sh` (от root после `git pull`).
 
 ## Board watch

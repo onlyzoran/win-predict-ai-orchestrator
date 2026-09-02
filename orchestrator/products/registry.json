@@ -52,10 +52,16 @@
     "surfaces": {}
   },
   "ios-games": {
-    "status": "stub",
+    "status": "active",
     "label": "ios-games",
     "templateRepo": "onlyzoran/ios-template-game",
-    "surfaces": {}
+    "surfaces": {
+      "game": {
+        "repo": "onlyzoran/ios-template-game",
+        "trigger": "sdk",
+        "description": "per-Goal SpriteKit game (repo from scaffold marker)"
+      }
+    }
   },
   "shoppable-feed": {
     "status": "active",

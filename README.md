@@ -1,6 +1,6 @@
 # win-predict-ai-orchestrator
 
-Штаб продуктов: цели, GitHub Project и оркестратор. Сейчас **active** — **win-predict-ai**, **shoppable-feed** и **gift-sales**; **telegram-bots** и **ios-games** — stub. Одна Goal на доске — несколько PR в рабочих репо.
+Штаб продуктов: цели, GitHub Project и оркестратор. Сейчас **active** — **win-predict-ai**, **shoppable-feed**, **gift-sales** и **ios-games**; **telegram-bots** — stub. Одна Goal на доске — несколько PR в рабочих репо.
 
 Промпты и конфиги cloud-агентов здесь **не** хранятся — они живут в [`cursor-cloud-agents`](https://github.com/onlyzoran/cursor-cloud-agents).
 
@@ -12,7 +12,7 @@
 | shoppable-feed | Issues → **shoppable-feed** | active |
 | gift-sales | Issues → **gift-sales** | active |
 | telegram-bots | Issues → **telegram-bots** | stub |
-| ios-games | Issues → **ios-games** | stub (template: `onlyzoran/ios-template-game`) |
+| ios-games | Issues → **ios-games** | active (template → `game-issue-<N>`) |
 
 Реестр: [orchestrator/products/registry.json](orchestrator/products/registry.json). Фильтр на доске: лейбл продукта (`win-predict-ai`, …).
 

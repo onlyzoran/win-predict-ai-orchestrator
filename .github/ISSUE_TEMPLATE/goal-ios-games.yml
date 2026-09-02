@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Продукт: **ios-games** (stub). Шаблон: [onlyzoran/ios-template-game](https://github.com/onlyzoran/ios-template-game).
-        Оркестратор пока не создаёт репо игры из шаблона и не открывает PR.
+        Продукт: **ios-games**. Шаблон: [onlyzoran/ios-template-game](https://github.com/onlyzoran/ios-template-game).
+        In Progress → оркестратор создаст `onlyzoran/game-issue-<номер>` и откроет PR в этом репо.
   - type: textarea
     id: outcome
     attributes:

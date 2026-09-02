@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isGameRepo } from "./scaffold.js";
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const REGISTRY_PATH = join(ROOT, "orchestrator/products/registry.json");
 const DEFAULT_PRODUCT = "win-predict-ai";
@@ -143,13 +145,22 @@ export function taskMatchesProduct(
   surface: string,
   repo: string,
   registry = loadProductRegistry(),
+  gameRepo?: string,
 ): boolean {
+  if (productId === "ios-games") {
+    if (surface !== "game" || !isGameRepo(repo)) return false;
+    return !gameRepo || repo === gameRepo;
+  }
   const meta = getProduct(productId, registry).surfaces[surface];
   return Boolean(meta && meta.repo === repo);
 }
 
 /** Markdown table for manager prompt: allowed surfaces for this product. */
-export function formatProductContext(productId: string, registry = loadProductRegistry()): string {
+export function formatProductContext(
+  productId: string,
+  registry = loadProductRegistry(),
+  opts?: { gameRepo?: string },
+): string {
   const entry = getProduct(productId, registry);
   const lines = [
     `Продукт Goal: \`${productId}\` (лейбл \`${entry.label}\`, status: \`${entry.status}\`).`,
@@ -157,6 +168,10 @@ export function formatProductContext(productId: string, registry = loadProductRe
   ];
   if (entry.templateRepo) {
     lines.push(`Шаблон новых репо: \`${entry.templateRepo}\` (GitHub Template).`);
+  }
+  if (productId === "ios-games" && opts?.gameRepo) {
+    lines.push(`Рабочий репо этой Goal (scaffold): \`${opts.gameRepo}\`.`);
+    lines.push("Планируй **одну** задачу: surface `game`, repo **именно этот**, trigger `sdk`.");
   }
   const surfaces = Object.entries(entry.surfaces);
   if (!surfaces.length) {
@@ -169,7 +184,11 @@ export function formatProductContext(productId: string, registry = loadProductRe
   for (const [surface, meta] of surfaces) {
     const trigger =
       meta.trigger === "slash" ? `slash ${meta.command ?? ""}`.trim() : meta.trigger;
-    lines.push(`| \`${surface}\` | \`${meta.repo}\` | ${trigger} |`);
+    const repo =
+      productId === "ios-games" && surface === "game" && opts?.gameRepo
+        ? opts.gameRepo
+        : meta.repo;
+    lines.push(`| \`${surface}\` | \`${repo}\` | ${trigger} |`);
   }
   return lines.join("\n");
 }
