@@ -55,6 +55,17 @@ journalctl -u board-watch.service -n 50 --no-pager
 
 В логе пустой доски: `watch: 0 goal, 0 child in In Progress`. Карточка в In Progress после Review без комментария: `Review→IP без комментария → sync main`. С замечаниями: запуск воркера. С фразой «релизь»: `release intent → releaser`.
 
+### Browser review (Playwright MCP)
+
+Local-ревьюер для ui/app/admin/gift-sales с demo URL ждёт preview (до 3 мин) и открывает его через Playwright MCP (`@playwright/mcp`, headless). На VPS под пользователем `cursor-worker` нужны Node ≥22 и сеть для `npx` (первый прогон скачает Chromium).
+
+```bash
+# Проверка от cursor-worker (тот же PATH, что board-watch)
+sudo -u cursor-worker bash -lc 'cd /opt/cursor-workers/win-predict-ai-orchestrator && npx -y @playwright/mcp@latest --help'
+```
+
+Отключить browser review без деплоя: `ORCHESTRATOR_BROWSER_REVIEW=0` в `/etc/cursor-worker.env`.
+
 Инвентарь слота (кто занял машину): `/opt/cursor-workers/data/inventory.json`. Файл появляется на тике вотчера (даже если слот свободен). При смене слота снимок уходит в Telegram (`слот 1/1` / `свободно`).
 
 ## HQ (внешний pitch)

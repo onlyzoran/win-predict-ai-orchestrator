@@ -44,6 +44,14 @@ import {
 } from "./release.js";
 import { goalQueueWaiting, pickGoalQueueHead } from "./goal-queue.js";
 import { IDLE_DISPATCH_HINT, recentlyIdleDispatchNotified, taskOpenPrNeedsReview } from "./goal-idle.js";
+import {
+  collectPreviewUrls,
+  formatBrowserReviewBlock,
+  isVisualTask,
+  needsBrowserReview,
+  playwrightMcpServers,
+  waitForPreviewUrls,
+} from "./visual-review.js";
 import { goalRevisionPending } from "./goal-revision.js";
 import { shouldReleaseForBoardPhase } from "./release-intent.js";
 import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
@@ -1366,16 +1374,6 @@ function isNewIconTask(task: Task): task is Task & { trigger: { type: "slash"; c
   return task.trigger.type === "slash" && task.trigger.command === "/new-icon";
 }
 
-function isVisualTask(task: Task, notes = ""): boolean {
-  const winPredictVisual =
-    (task.surface === "ui" || task.surface === "app" || task.surface === "admin") &&
-    task.repo.startsWith("onlyzoran/win-predict-ai");
-  return (
-    winPredictVisual ||
-    /цвет|палитр|theme|токен|dark|light|контраст/i.test(`${task.title}\n${task.body}\n${notes}`)
-  );
-}
-
 function checksFailed(rollup: unknown): boolean {
   if (!Array.isArray(rollup)) return false;
   return rollup.some((item) => {
@@ -1441,16 +1439,33 @@ function validateReview(raw: unknown): Review {
   };
 }
 
-async function runReviewer(task: Task, goalIssueUrl: string, prUrls: string[], token: string, extra = ""): Promise<Review> {
+async function runReviewer(
+  task: Task,
+  goalIssueUrl: string,
+  goalNumber: number,
+  prUrls: string[],
+  token: string,
+  extra = "",
+): Promise<Review> {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) throw new Error("нет секрета CURSOR_API_KEY");
   const reviewer = readFileSync(join(ROOT, "orchestrator/prompts/reviewer.md"), "utf8");
   const schema = readFileSync(join(ROOT, "orchestrator/schema/review.schema.json"), "utf8");
-  const design = isVisualTask(task)
+  const design = isVisualTask(task, extra)
     ? readFileSync(join(ROOT, "orchestrator/prompts/design.md"), "utf8")
     : "";
   const prBlocks = prUrls.map((url) => gatherPrContext(url, token));
   const failedChecks = prBlocks.some((block) => block.checksFailed);
+  const browserReview = needsBrowserReview(task, prUrls, goalNumber, extra);
+  let browserBlock = "";
+  let mcpServers: ReturnType<typeof playwrightMcpServers> | undefined;
+  if (browserReview) {
+    const previewUrls = collectPreviewUrls(prUrls, goalNumber);
+    console.log(`reviewer ${task.id}: browser review, demo ${previewUrls.join(", ")}`);
+    const previewResults = await waitForPreviewUrls(previewUrls);
+    browserBlock = formatBrowserReviewBlock(previewResults, task);
+    mcpServers = playwrightMcpServers(ROOT);
+  }
   const prompt = [
     reviewer,
     design ? `\n${design}\n` : "",
@@ -1471,6 +1486,7 @@ async function runReviewer(task: Task, goalIssueUrl: string, prUrls: string[], t
     "",
     prBlocks.map((block) => block.text).join("\n\n---\n\n"),
     failedChecks ? "\nChecks PR красные — verdict не может быть pass." : "",
+    browserBlock ? `\n${browserBlock}` : "",
     "",
     "Верни только один блок ```json ... ``` с объектом вердикта. Никакого текста снаружи.",
   ].join("\n");
@@ -1479,8 +1495,11 @@ async function runReviewer(task: Task, goalIssueUrl: string, prUrls: string[], t
     apiKey,
     model: { id: "composer-2.5" },
     local: { cwd: ROOT },
+    ...(mcpServers ? { mcpServers } : {}),
   });
-  console.log(`reviewer run=${result.id} status=${result.status} task=${task.id}`);
+  console.log(
+    `reviewer run=${result.id} status=${result.status} task=${task.id}${browserReview ? " browser" : ""}`,
+  );
   if (result.status !== "finished") {
     throw new Error(runFailureMessage(result));
   }
@@ -1671,6 +1690,7 @@ async function settleWithReviewer(
     review = await runReviewer(
       task,
       issueUrl,
+      goalNumber,
       prUrls,
       token,
       `${roundCap}${iconGate}\n\nСдача воркера:\n${ctx.source}`,

@@ -12,6 +12,7 @@ orchestrator/
   schema/plan.example.json
   schema/review.schema.json
   src/run.ts
+  src/visual-review.ts       # browser review: preview poll + Playwright MCP
   src/products.ts            # лейбл продукта → registry
   ops/cursor-worker.service  # systemd: My Machines worker
   ops/board-watch.timer      # systemd: In Progress (работа + релиз по фразе)
@@ -26,7 +27,7 @@ orchestrator/
 2. Диспетчер:
    - `slash` `/new-icon` → комментарий в icons-репо (не на доске), **ждёт PR**, дописывает Parent + маркер
    - `sdk` → My Machines `win-predict-vps` (`worker.md`)
-3. После PR local-ревьюер (`reviewer.md`) пишет в **Goal**: **pass** / **blocked**; **changes** → Goal остаётся **In Progress**, воркер MODE B (макс. 2 круга). Goal → **Review**, когда все куски плана готовы.
+3. После PR local-ревьюер (`reviewer.md`) пишет в **Goal**: **pass** / **blocked**; **changes** → Goal остаётся **In Progress**, воркер MODE B (макс. 2 круга). Для ui/app/admin/gift-sales с demo URL ревьюер ждёт preview (до 3 мин) и проверяет страницу через Playwright MCP. Goal → **Review**, когда все куски плана готовы.
 4. Приёмка: «релизь» и **Review → In Progress**. Вотчер мержит все open PR плана → **Done**.
 5. **Review → In Progress** без комментария: sync `main` во все PR. Правка: комментарий в **Goal**. Таймер `board-watch` каждые 2 мин.
 
@@ -64,5 +65,5 @@ orchestrator/
 |---|---|
 | decompose | local `Agent.prompt` |
 | dispatch | issues + slash `/new-icon` или My Machines `worker.md` |
-| review | local `Agent.prompt` (`reviewer.md`) по PR; pass/blocked → Review, changes → воркер MODE B |
+| review | local `Agent.prompt` (`reviewer.md`) по PR; ui/app/admin/sales + demo → Playwright MCP; pass/blocked → Review, changes → воркер MODE B |
 | watch | systemd timer на VPS: In Progress → оркестратор/воркер; после PR ui/icons → prerelease + bump app/admin; In Progress + фраза про релиз → bump версии + ченджлог + merge (+ publish/promote для библиотек) → Done |
