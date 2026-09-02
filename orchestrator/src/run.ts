@@ -51,7 +51,12 @@ import {
   stripPrerelease,
 } from "./release.js";
 import { goalQueueWaiting, pickGoalQueueHead } from "./goal-queue.js";
-import { shouldHaveWorkingLabel, WORKING_LABEL } from "./goal-working-label.js";
+import {
+  REVIEWING_LABEL,
+  shouldHaveReviewingLabel,
+  shouldHaveWorkingLabel,
+  WORKING_LABEL,
+} from "./goal-working-label.js";
 import { IDLE_DISPATCH_HINT, recentlyIdleDispatchNotified, taskOpenPrNeedsReview } from "./goal-idle.js";
 import { formatHumanGatesForReviewer } from "./human-gates.js";
 import {
@@ -1139,15 +1144,57 @@ function ensureWorkingLabel(token: string): void {
   );
 }
 
-function syncGoalWorkingLabel(issueNumber: number, state: DispatchState | undefined, token: string): void {
-  ensureWorkingLabel(token);
-  const labels = fetchIssue(GOAL_REPO, issueNumber, token).labels.map((l) => l.name);
-  const want = shouldHaveWorkingLabel(state, Date.now(), WORKING_STALE_MS);
-  if (want && !labels.includes(WORKING_LABEL)) {
-    gh(["issue", "edit", String(issueNumber), "-R", GOAL_REPO, "--add-label", WORKING_LABEL], token);
-  } else if (!want && labels.includes(WORKING_LABEL)) {
-    gh(["issue", "edit", String(issueNumber), "-R", GOAL_REPO, "--remove-label", WORKING_LABEL], token);
+function ensureReviewingLabel(token: string): void {
+  gh(
+    [
+      "label",
+      "create",
+      REVIEWING_LABEL,
+      "-R",
+      GOAL_REPO,
+      "--color",
+      "5319e7",
+      "--description",
+      "ревьюер смотрит PR Goal",
+      "--force",
+    ],
+    token,
+  );
+}
+
+function syncGoalPhaseLabel(
+  issueNumber: number,
+  label: string,
+  want: boolean,
+  labels: string[],
+  token: string,
+): void {
+  if (want && !labels.includes(label)) {
+    gh(["issue", "edit", String(issueNumber), "-R", GOAL_REPO, "--add-label", label], token);
+  } else if (!want && labels.includes(label)) {
+    gh(["issue", "edit", String(issueNumber), "-R", GOAL_REPO, "--remove-label", label], token);
   }
+}
+
+function syncGoalPhaseLabels(issueNumber: number, state: DispatchState | undefined, token: string): void {
+  ensureWorkingLabel(token);
+  ensureReviewingLabel(token);
+  const labels = fetchIssue(GOAL_REPO, issueNumber, token).labels.map((l) => l.name);
+  const now = Date.now();
+  syncGoalPhaseLabel(
+    issueNumber,
+    WORKING_LABEL,
+    shouldHaveWorkingLabel(state, now, WORKING_STALE_MS),
+    labels,
+    token,
+  );
+  syncGoalPhaseLabel(
+    issueNumber,
+    REVIEWING_LABEL,
+    shouldHaveReviewingLabel(state, now, WORKING_STALE_MS),
+    labels,
+    token,
+  );
 }
 
 function commentGoalDispatch(
@@ -1163,7 +1210,7 @@ function commentGoalDispatch(
     return;
   }
   commentOnIssue(GOAL_REPO, issueNumber, body, t);
-  syncGoalWorkingLabel(issueNumber, state, t);
+  syncGoalPhaseLabels(issueNumber, state, t);
 }
 
 function graphql<T>(token: string, query: string, variables: Record<string, string | null | undefined>): T {
@@ -2516,7 +2563,7 @@ function postNonReadyPlan(issue: IssueCommentEvent["issue"], plan: Plan, token: 
     ].join("\n"),
   );
   addToProject(issue.html_url, "Review", token);
-  syncGoalWorkingLabel(issue.number, undefined, token);
+  syncGoalPhaseLabels(issue.number, undefined, token);
 }
 
 async function decompose(
@@ -3465,7 +3512,7 @@ async function watchBoard(): Promise<void> {
 
     for (const goal of goals) {
       const comments = listIssueComments(goal.repo, goal.number, token);
-      syncGoalWorkingLabel(goal.number, lastGoalDispatchState(comments), token);
+      syncGoalPhaseLabels(goal.number, lastGoalDispatchState(comments), token);
     }
 
     for (const goal of waiting) {
