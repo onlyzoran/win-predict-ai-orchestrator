@@ -59,6 +59,10 @@ Goal Issue: заголовок, тело (Результат; опциональ
 
 Деплой gift-sales: Next.js с `basePath: '/gift-sales'`. Прод — `http://202.71.15.138/gift-sales/`, preview Goal — `http://202.71.15.138/gift-sales/preview/issue-<N>/`.
 
+## Маршрутизация (ios-games)
+
+Продукт **stub**. GitHub Template: `onlyzoran/ios-template-game`. Каждая Goal в будущем — отдельный репо игры (`onlyzoran/game-*`), созданный из шаблона. Пока surfaces в registry пуст — `needs_human`, PR нет. Не планируй win-predict / feed / sales.
+
 ## Гранулярность (крупные куски → PR)
 
 Goal — один исход для человека на доске. Одна задача плана — один **mergeable PR** в одном репо, не шаг чеклиста.

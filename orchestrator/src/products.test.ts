@@ -98,6 +98,7 @@ test("loadProductRegistry: shipped file", () => {
   assert.equal(registry["win-predict-ai"]?.board?.id, "PVT_kwHOAom_KM4BgVLq");
   assert.equal(registry["telegram-bots"]?.status, "stub");
   assert.equal(registry["ios-games"]?.status, "stub");
+  assert.equal(registry["ios-games"]?.templateRepo, "onlyzoran/ios-template-game");
   assert.equal(registry["shoppable-feed"]?.status, "active");
   assert.equal(registry["shoppable-feed"]?.surfaces.feed?.repo, "onlyzoran/shoppable-feed");
   assert.equal(registry["gift-sales"]?.status, "active");

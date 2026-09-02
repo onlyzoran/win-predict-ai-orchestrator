@@ -10,7 +10,7 @@ Goal — одна высокоуровневая цель **продукта**. 
 | **shoppable-feed** | `shoppable-feed` | active — PR в `onlyzoran/shoppable-feed` |
 | **gift-sales** | `gift-sales` | active — PR в `onlyzoran/gift-sales` |
 | **telegram-bots** | `telegram-bots` | stub — Goal на доске, PR не открываются |
-| **ios-games** | `ios-games` | stub — Goal на доске, PR не открываются |
+| **ios-games** | `ios-games` | stub — шаблон `onlyzoran/ios-template-game`; PR после scaffold |
 
 Реестр: [orchestrator/products/registry.json](../orchestrator/products/registry.json). Без лейбла продукта оркестратор считает Goal продуктом `win-predict-ai` (старые карточки). Старый префикс `product:…` тоже понимается.
 

@@ -29,6 +29,8 @@ export type ProductSurface = {
 export type ProductEntry = {
   status: ProductStatus;
   label: string;
+  /** GitHub template for per-Goal scaffold (ios-games). */
+  templateRepo?: string;
   board?: BoardProject;
   surfaces: Record<string, ProductSurface>;
 };
@@ -127,7 +129,7 @@ export function stubNeedsHumanPlan(goalNumber: number, productId: string): {
 } {
   return {
     goal_number: goalNumber,
-    summary: `Продукт \`${productId}\` ещё не подключён: в \`orchestrator/products/registry.json\` нет рабочих репо (status: stub). Добавь surfaces/repos и повтори Inbox → In Progress.`,
+    summary: `Продукт \`${productId}\` ещё не активен (status: stub). Шаблон может быть в registry, но оркестратор пока не создаёт репо игры под Goal и не открывает PR — нужны surfaces + scaffold из templateRepo. Повтори после подключения.`,
     status: "needs_human",
     surfaces: [],
     human_gates: [`подключить репозитории продукта ${productId} в registry`],
@@ -153,6 +155,9 @@ export function formatProductContext(productId: string, registry = loadProductRe
     `Продукт Goal: \`${productId}\` (лейбл \`${entry.label}\`, status: \`${entry.status}\`).`,
     "Планируй child только для surfaces этого продукта. Не подмешивай репо других продуктов.",
   ];
+  if (entry.templateRepo) {
+    lines.push(`Шаблон новых репо: \`${entry.templateRepo}\` (GitHub Template).`);
+  }
   const surfaces = Object.entries(entry.surfaces);
   if (!surfaces.length) {
     lines.push("Поверхностей нет (stub) — верни status `needs_human` и пустой `tasks`.");

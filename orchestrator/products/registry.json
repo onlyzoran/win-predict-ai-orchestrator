@@ -54,6 +54,7 @@
   "ios-games": {
     "status": "stub",
     "label": "ios-games",
+    "templateRepo": "onlyzoran/ios-template-game",
     "surfaces": {}
   },
   "shoppable-feed": {

@@ -12,7 +12,7 @@
 | shoppable-feed | Issues → **shoppable-feed** | active |
 | gift-sales | Issues → **gift-sales** | active |
 | telegram-bots | Issues → **telegram-bots** | stub |
-| ios-games | Issues → **ios-games** | stub |
+| ios-games | Issues → **ios-games** | stub (template: `onlyzoran/ios-template-game`) |
 
 Реестр: [orchestrator/products/registry.json](orchestrator/products/registry.json). Фильтр на доске: лейбл продукта (`win-predict-ai`, …).
 
