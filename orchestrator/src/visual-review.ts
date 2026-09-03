@@ -64,7 +64,7 @@ export function needsBrowserReview(
   return collectPreviewUrls(prUrls, goalNumber).length > 0;
 }
 
-async function probePreviewUrl(
+export async function probePreviewUrl(
   url: string,
   fetchImpl: typeof fetch,
 ): Promise<{ ready: boolean; status?: number; error?: string }> {

@@ -40,9 +40,9 @@ git_auth() {
 }
 
 exec 9>"/tmp/gift-sales-preview.lock"
-if ! flock -n 9; then
-  echo "preview build already running"
-  exit 0
+if ! flock -w 900 9; then
+  echo "preview build lock timeout (900s)" >&2
+  exit 1
 fi
 
 if [[ ${GIFT_SALES_PREVIEW_IF_MISSING:-} == 1 && -f $TARGET/index.html ]]; then
@@ -59,13 +59,15 @@ cd "$SRC"
 git_auth fetch origin --prune --tags
 
 if [[ -z $REF ]]; then
+  GOAL_PARENT="win-predict-ai-orchestrator#${GOAL}"
   REF="$(
     gh pr list -R "$REPO" --state open --limit 50 --json body,headRefOid \
-      --jq ".[] | select(.body | test(\"orchestrator#${GOAL}\\\\b\")) | .headRefOid" \
+      --jq ".[] | select(.body | test(\"${GOAL_PARENT}\\\\b\")) | .headRefOid" \
       2>/dev/null | head -1 || true
   )"
   if [[ -z $REF ]]; then
-    REF="$(git rev-parse --verify origin/main)"
+    echo "no open PR for ${GOAL_PARENT}" >&2
+    exit 1
   fi
 fi
 

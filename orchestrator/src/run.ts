@@ -73,6 +73,7 @@ import { ensureGameScaffold, isGameRepo } from "./scaffold.js";
 import { shouldReleaseForBoardPhase } from "./release-intent.js";
 import { shouldSyncMainFromBoard, syncMainWorkerNotes } from "./sync-main.js";
 import { shouldWakeOnPhase, type WakePhase } from "./wake-child.js";
+import { ensureVpsPreview, isVpsPreviewReady, taskUsesVpsPreview } from "./vps-preview.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const GOAL_REPO = "onlyzoran/win-predict-ai-orchestrator";
@@ -1579,16 +1580,20 @@ function validateReview(raw: unknown): Review {
   };
 }
 
-const VPS_PREVIEW_SCRIPTS: Record<string, { script: string; ifMissingEnv: string }> = {
-  "onlyzoran/gift-sales": {
-    script: "gift-sales-preview-up.sh",
-    ifMissingEnv: "GIFT_SALES_PREVIEW_IF_MISSING",
-  },
-  "onlyzoran/shoppable-feed": {
-    script: "shoppable-feed-preview-up.sh",
-    ifMissingEnv: "SHOPPABLE_FEED_PREVIEW_IF_MISSING",
-  },
-};
+function deployTaskVpsPreview(
+  task: Task,
+  goalNumber: number,
+  opts: { headRef?: string; prUrls?: string[]; ifMissing?: boolean; token?: string },
+): void {
+  if (!taskUsesVpsPreview(task.repo)) return;
+  ensureVpsPreview(task.repo, goalNumber, {
+    root: ROOT,
+    headRef: opts.headRef,
+    prUrls: opts.prUrls,
+    ifMissing: opts.ifMissing,
+    prHeadSha: opts.token ? (url) => prHeadSha(url, opts.token!) : undefined,
+  });
+}
 
 const VPS_PROD_DEPLOY: Record<string, { script: string; url: string }> = {
   "onlyzoran/gift-sales": {
@@ -1596,48 +1601,6 @@ const VPS_PROD_DEPLOY: Record<string, { script: string; url: string }> = {
     url: "http://202.71.15.138/gift-sales/",
   },
 };
-
-/** Generic main from MODE A — preview script resolves open PR head by Goal marker. */
-function previewScriptRef(headRef?: string): string | undefined {
-  const ref = headRef?.trim();
-  if (!ref || ref === "main" || ref === "master") return undefined;
-  return ref;
-}
-
-function ensureVpsPreview(
-  task: Task,
-  goalNumber: number,
-  headRef?: string,
-  opts?: { ifMissing?: boolean },
-): void {
-  const config = VPS_PREVIEW_SCRIPTS[task.repo];
-  if (!config) return;
-  const scriptOverride =
-    task.repo === "onlyzoran/gift-sales"
-      ? process.env.ORCHESTRATOR_GIFT_SALES_PREVIEW_SCRIPT?.trim()
-      : task.repo === "onlyzoran/shoppable-feed"
-        ? process.env.ORCHESTRATOR_SHOPPABLE_FEED_PREVIEW_SCRIPT?.trim()
-        : undefined;
-  const script = scriptOverride || join(ROOT, `orchestrator/ops/${config.script}`);
-  if (!existsSync(script)) {
-    console.warn(`preview ${task.repo}: нет ${script}`);
-    return;
-  }
-  const args = [script, String(goalNumber)];
-  const ref = previewScriptRef(headRef);
-  if (ref) args.push(ref);
-  console.log(`preview ${task.repo}: bash ${args.join(" ")}`);
-  const result = spawnSync("bash", args, {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      ...(opts?.ifMissing ? { [config.ifMissingEnv]: "1" } : {}),
-    },
-  });
-  if (result.status !== 0) {
-    console.warn(`preview ${task.repo}: ${(result.stderr || result.stdout || "failed").trim()}`);
-  }
-}
 
 function ensureVpsProdDeploy(task: Task, mergeSha?: string): string | undefined {
   const config = VPS_PROD_DEPLOY[task.repo];
@@ -1679,7 +1642,7 @@ async function runReviewer(
   const prBlocks = prUrls.map((url) => gatherPrContext(url, token));
   const failedChecks = prBlocks.some((block) => block.checksFailed);
   const humanGatesBlock = formatHumanGatesForReviewer(humanGates);
-  ensureVpsPreview(task, goalNumber, headRef);
+  deployTaskVpsPreview(task, goalNumber, { headRef, prUrls, token });
   const browserReview = needsBrowserReview(task, prUrls, goalNumber, extra);
   let browserBlock = "";
   let mcpServers: ReturnType<typeof playwrightMcpServers> | undefined;
@@ -1838,6 +1801,11 @@ async function maybePromoteGoal(goalNumber: number, token: string): Promise<bool
   addToProject(goalUrl(goalNumber), "Review", token);
   const prsByTask = collectOpenPrsForGoal(plan, token);
   const allPrUrls = flattenPrUrls(prsByTask);
+  for (const task of plan.tasks) {
+    const taskPrs = prsByTask.get(task.id);
+    if (!taskPrs?.length) continue;
+    deployTaskVpsPreview(task, goalNumber, { prUrls: taskPrs, token });
+  }
   commentGoalDispatch(
     goalNumber,
     { phase: "review", at: new Date().toISOString(), prUrls: allPrUrls },
@@ -1895,6 +1863,8 @@ async function settleWithReviewer(
     );
     return `${task.id} — review blocked — нет PR`;
   }
+
+  deployTaskVpsPreview(task, goalNumber, { headRef: ctx.headRef, prUrls, token });
 
   commentGoalDispatch(
     goalNumber,
@@ -3544,14 +3514,23 @@ async function handleReadyToRelease(item: BoardIssue, token: string): Promise<vo
   console.log(`skip release ${item.url}: не штаб-репо`);
 }
 
-function backfillVpsPreviews(reviewItems: BoardIssue[], token: string): void {
+async function backfillVpsPreviews(reviewItems: BoardIssue[], token: string): Promise<void> {
   for (const item of reviewItems) {
     const comments = listIssueComments(item.repo, item.number, token);
     const plan = extractStoredPlan(comments, item.number);
     if (!plan) continue;
     const state = lastGoalDispatchState(comments);
+    const prsByTask = collectOpenPrsForGoal(plan, token);
     for (const task of plan.tasks) {
-      ensureVpsPreview(task, item.number, state?.headRef, { ifMissing: true });
+      if (!taskUsesVpsPreview(task.repo)) continue;
+      const taskPrs = prsByTask.get(task.id) ?? state?.prUrls ?? [];
+      const ready = await isVpsPreviewReady(task.repo, item.number);
+      deployTaskVpsPreview(task, item.number, {
+        headRef: state?.headRef,
+        prUrls: taskPrs.length ? taskPrs : undefined,
+        token,
+        ifMissing: ready,
+      });
     }
   }
 }
@@ -3583,7 +3562,7 @@ async function watchBoard(): Promise<void> {
     writeInventory(inventory);
 
     const reviewGoals = all.filter((item) => item.status === "Review" && !item.closed && isHqIssue(item.repo));
-    backfillVpsPreviews(reviewGoals, token);
+    await backfillVpsPreviews(reviewGoals, token);
 
     const ready = all.filter((item) => item.status === LEGACY_READY_TO_RELEASE && !item.closed);
     const readyGoals = ready.filter((item) => isHqIssue(item.repo));

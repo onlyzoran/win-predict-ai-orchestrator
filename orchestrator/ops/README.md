@@ -29,6 +29,13 @@ chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/ensure
 
 Прод и preview: `http://202.71.15.138/gift-sales/` и `…/preview/issue-<N>/`. Установка nginx + systemd: `orchestrator/ops/install-gift-sales.sh` (от root после `git pull`). После merge PR в релизе Goal оркестратор запускает `gift-sales-deploy.sh` (клон `/opt/cursor-workers/gift-sales`, `npm ci && build`, `systemctl restart gift-sales.service`).
 
+**Preview deploy (gift-sales, shoppable-feed):** board-watch поднимает demo автоматически — перед ревью, при переводе Goal в Review и при backfill карточек в Review (если URL отдаёт 404). Скрипты ищут open PR по маркеру `Parent: …/win-predict-ai-orchestrator#<N>` в body и билдят head SHA. Ручная проверка:
+
+```bash
+sudo -u cursor-worker bash /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/gift-sales-preview-up.sh 69
+curl -I http://202.71.15.138/gift-sales/preview/issue-69/
+```
+
 ## Board watch
 
 Таймер `board-watch.timer` раз в 2 минуты (после окончания прошлого прогона) смотрит доску **In Progress**: первый старт или правка после Review → оркестратор/воркер; Review → In Progress без комментария → sync main (`update-branch`, при конфликте MODE B); комментарий «релизь» / «можно релизить» после Review → bump версии + ченджлог, merge PR, Done. Старые карточки в legacy-колонке Ready to Release тоже ещё релизятся.
