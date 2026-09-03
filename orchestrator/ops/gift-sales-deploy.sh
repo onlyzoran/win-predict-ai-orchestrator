@@ -24,15 +24,21 @@ git_auth() {
 }
 
 restart_service() {
-  if systemctl is-active --quiet gift-sales.service 2>/dev/null; then
-    systemctl restart gift-sales.service 2>/dev/null || sudo systemctl restart gift-sales.service
-  elif [[ $EUID -eq 0 ]]; then
-    systemctl enable --now gift-sales.service
-  else
-    sudo systemctl enable --now gift-sales.service 2>/dev/null || {
-      echo "build ok — от root: systemctl enable --now gift-sales.service" >&2
-    }
+  if [[ $EUID -eq 0 ]]; then
+    /bin/systemctl restart gift-sales.service 2>/dev/null || /bin/systemctl enable --now gift-sales.service
+    return
   fi
+  sudo -n /bin/systemctl restart gift-sales.service 2>/dev/null || sudo -n /bin/systemctl enable --now gift-sales.service || {
+    echo "build ok — от root: systemctl restart gift-sales.service" >&2
+  }
+}
+
+stop_service() {
+  if [[ $EUID -eq 0 ]]; then
+    /bin/systemctl stop gift-sales.service 2>/dev/null || true
+    return
+  fi
+  sudo -n /bin/systemctl stop gift-sales.service 2>/dev/null || true
 }
 
 if [[ ! -d $APP/.git ]]; then
@@ -55,6 +61,8 @@ git reset --hard "$REF"
 git clean -fd -e node_modules -e .next
 
 /usr/bin/npm ci
+# next start держит .next; сборка поверх живого процесса отдаёт HTML с хешами, которых сервер ещё не видит.
+stop_service
 /usr/bin/npm run build
 restart_service
 

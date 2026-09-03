@@ -85,7 +85,7 @@ echo "Preview unit:  $PREVIEW_UNIT"
 
 SUDOERS=/etc/sudoers.d/cursor-worker-gift-sales-deploy
 cat > "$SUDOERS" <<'EOF'
-cursor-worker ALL=(ALL) NOPASSWD: /bin/systemctl restart gift-sales.service, /bin/systemctl enable gift-sales.service, /bin/systemctl start gift-sales.service
+cursor-worker ALL=(ALL) NOPASSWD: /bin/systemctl restart gift-sales.service, /bin/systemctl stop gift-sales.service, /bin/systemctl enable gift-sales.service, /bin/systemctl start gift-sales.service
 EOF
 chmod 440 "$SUDOERS"
 
