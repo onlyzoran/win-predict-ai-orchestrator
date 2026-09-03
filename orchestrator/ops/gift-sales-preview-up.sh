@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Static Goal preview for gift-sales: /var/www/gift-sales-preview/issue-<N>/
-# Usage (cursor-worker on VPS): gift-sales-preview-up.sh <goal-number> [git-ref]
+# Dynamic Goal preview for gift-sales (Next.js + API routes).
+# URL: http://202.71.15.138/gift-sales/preview/issue-<N>/
+# Usage: gift-sales-preview-up.sh <goal-number> [git-ref]
 set -euo pipefail
 
 GOAL="${1:?usage: gift-sales-preview-up.sh <goal-number> [git-ref]}"
@@ -12,10 +13,12 @@ fi
 REF="${2:-}"
 SRC="${GIFT_SALES_PREVIEW_SRC:-/opt/cursor-workers/gift-sales-preview-src}"
 PREVIEW_ROOT="${GIFT_SALES_PREVIEW_ROOT:-/var/www/gift-sales-preview}"
+PREVIEW_APP="${GIFT_SALES_PREVIEW_APP:-/opt/cursor-workers/gift-sales-preview-run}"
 REPO="${GIFT_SALES_REPO:-onlyzoran/gift-sales}"
 SLUG="issue-${GOAL}"
 BASE_PATH="/gift-sales/preview/${SLUG}"
 TARGET="${PREVIEW_ROOT}/${SLUG}"
+PREVIEW_PORT="${GIFT_SALES_PREVIEW_PORT:-3005}"
 
 if [[ -f /etc/cursor-worker.env ]]; then
   set +u
@@ -39,15 +42,40 @@ git_auth() {
   fi
 }
 
+resolve_ref() {
+  local ref="$1"
+  if git rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
+    git rev-parse --verify "${ref}^{commit}"
+    return
+  fi
+  ref="${ref#origin/}"
+  git rev-parse --verify "origin/${ref}^{commit}"
+}
+
+restart_preview_service() {
+  if systemctl is-active --quiet gift-sales-preview.service 2>/dev/null; then
+    systemctl restart gift-sales-preview.service 2>/dev/null || sudo systemctl restart gift-sales-preview.service
+  elif [[ $EUID -eq 0 ]]; then
+    systemctl enable --now gift-sales-preview.service
+  else
+    sudo systemctl enable --now gift-sales-preview.service 2>/dev/null || {
+      echo "build ok — от root: systemctl enable --now gift-sales-preview.service" >&2
+    }
+  fi
+}
+
 exec 9>"/tmp/gift-sales-preview.lock"
 if ! flock -w 900 9; then
   echo "preview build lock timeout (900s)" >&2
   exit 1
 fi
 
-if [[ ${GIFT_SALES_PREVIEW_IF_MISSING:-} == 1 && -f $TARGET/index.html ]]; then
-  echo "preview exists: $TARGET"
-  exit 0
+if [[ ${GIFT_SALES_PREVIEW_IF_MISSING:-} == 1 && -f $TARGET/.preview-ready ]]; then
+  active_goal="$(cat "$PREVIEW_APP/.preview-goal" 2>/dev/null || true)"
+  if [[ $active_goal == "$GOAL" ]]; then
+    echo "preview exists: goal #$GOAL on port $PREVIEW_PORT"
+    exit 0
+  fi
 fi
 
 if [[ ! -d $SRC/.git ]]; then
@@ -71,41 +99,48 @@ if [[ -z $REF ]]; then
   fi
 fi
 
-if [[ -n $REF ]]; then
-  REF="$(git rev-parse --verify "$REF^{commit}" 2>/dev/null || git rev-parse --verify "origin/${REF#origin/}^{commit}")"
-fi
-
+REF="$(resolve_ref "$REF")"
 git checkout -f --detach "$REF"
 git reset --hard "$REF"
-git clean -fd -e node_modules -e .next -e out
+git clean -fd -e node_modules -e .next
 
-python3 - <<'PY'
+export GIFT_SALES_BASE_PATH="$BASE_PATH"
+python3 - <<PY
+import os
 from pathlib import Path
+
+base = os.environ["GIFT_SALES_BASE_PATH"]
 Path("next.config.ts").write_text(
-    """import type { NextConfig } from "next";
+    f'''import type {{ NextConfig }} from "next";
 
-const exportPreview = process.env.GIFT_SALES_OUTPUT === "export";
-
-const nextConfig: NextConfig = {
-  basePath: process.env.GIFT_SALES_BASE_PATH || "/gift-sales",
+const nextConfig: NextConfig = {{
+  basePath: "{base}",
   trailingSlash: true,
   transpilePackages: ["antd", "@ant-design/icons"],
-  ...(exportPreview ? { output: "export" as const, images: { unoptimized: true } } : {}),
-};
+}};
 
 export default nextConfig;
-"""
+'''
 )
 PY
 
 npm ci
-GIFT_SALES_BASE_PATH="$BASE_PATH" GIFT_SALES_OUTPUT=export npm run build
+npm run build
 
-if [[ ! -d out ]]; then
-  echo "next export did not produce out/" >&2
-  exit 1
-fi
+mkdir -p "$PREVIEW_APP"
+rsync -a --delete \
+  --exclude node_modules --exclude .git \
+  "$SRC/" "$PREVIEW_APP/"
+cd "$PREVIEW_APP"
+npm ci --omit=dev
 
 mkdir -p "$TARGET"
-rsync -a --delete out/ "$TARGET/"
+echo "$REF" > "$TARGET/.preview-ref"
+echo "$GOAL" > "$TARGET/.preview-ready"
+echo "$GOAL" > "$PREVIEW_APP/.preview-goal"
+echo "$REF" > "$PREVIEW_APP/.preview-ref"
+printf 'GIFT_SALES_BASE_PATH=%s\n' "$BASE_PATH" > "$PREVIEW_APP/preview.env"
+
+restart_preview_service
+
 echo "preview: http://202.71.15.138${BASE_PATH}/"

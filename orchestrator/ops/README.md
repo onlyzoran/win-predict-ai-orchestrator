@@ -27,9 +27,9 @@ chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/ensure
 
 На VPS нет Xcode — воркер правит Swift/ресурсы и открывает PR; сборка на Mac человека.
 
-Прод и preview: `http://202.71.15.138/gift-sales/` и `…/preview/issue-<N>/`. Установка nginx + systemd: `orchestrator/ops/install-gift-sales.sh` (от root после `git pull`). После merge PR в релизе Goal оркестратор запускает `gift-sales-deploy.sh` (клон `/opt/cursor-workers/gift-sales`, `npm ci && build`, `systemctl restart gift-sales.service`).
+Прод и preview: `http://202.71.15.138/gift-sales/` и `…/preview/issue-<N>/`. Preview — dynamic Next.js на порту 3005 (API routes работают). Установка nginx + systemd: `orchestrator/ops/install-gift-sales.sh` (от root после `git pull`). После merge PR в релизе Goal оркестратор запускает `gift-sales-deploy.sh` (клон `/opt/cursor-workers/gift-sales`, `npm ci && build`, `systemctl restart gift-sales.service`).
 
-**Preview deploy (gift-sales, shoppable-feed):** board-watch поднимает demo автоматически — перед ревью, при переводе Goal в Review и при backfill карточек в Review (если URL отдаёт 404). Скрипты ищут open PR по маркеру `Parent: …/win-predict-ai-orchestrator#<N>` в body и билдят head SHA. Ручная проверка:
+**Preview deploy (gift-sales, shoppable-feed):** board-watch поднимает demo автоматически — перед ревью, при переводе Goal в Review и при backfill карточек в Review (если URL отдаёт 404). Скрипты ищут open PR по маркеру `Parent: …/win-predict-ai-orchestrator#<N>` в body и билдят head SHA. Preview — один Next.js-процесс на продукт (gift-sales: 3005, shoppable-feed: 3004). Ручная проверка:
 
 ```bash
 sudo -u cursor-worker bash /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/gift-sales-preview-up.sh 69

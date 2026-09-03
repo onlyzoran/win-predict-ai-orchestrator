@@ -1,0 +1,22 @@
+[Unit]
+Description=gift-sales Goal preview (dynamic Next.js, port 3005)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cursor-worker
+Group=cursor-worker
+WorkingDirectory=/opt/cursor-workers/gift-sales-preview-run
+EnvironmentFile=-/etc/cursor-worker.env
+EnvironmentFile=-/opt/cursor-workers/gift-sales-preview-run/preview.env
+Environment=NODE_ENV=production
+Environment=PORT=3005
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
