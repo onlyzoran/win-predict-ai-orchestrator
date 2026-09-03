@@ -685,8 +685,22 @@ function shouldWakeChild(
   });
 }
 
+function phaseVisibleLine(state: DispatchState): string | undefined {
+  switch (state.phase) {
+    case "working":
+      return "working";
+    case "reviewing":
+      return "reviewing";
+    case "releasing":
+      return "releasing";
+    default:
+      return undefined;
+  }
+}
+
 function formatDispatchComment(state: DispatchState, lines: string[]): string {
-  return [DISPATCH_MARKER, `<!-- orchestrator-state:${JSON.stringify(state)} -->`, ...lines].join(
+  const bodyLines = lines.length ? lines : phaseVisibleLine(state) ? [phaseVisibleLine(state)!] : [];
+  return [DISPATCH_MARKER, `<!-- orchestrator-state:${JSON.stringify(state)} -->`, ...bodyLines].join(
     "\n",
   );
 }
