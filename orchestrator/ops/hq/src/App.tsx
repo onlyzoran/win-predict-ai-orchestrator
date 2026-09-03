@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { FlowCanvas } from "./FlowCanvas";
+import { auditEdges, auditMeta, auditNodes } from "./flows/audit";
 import { cycleEdges, cycleMeta, cycleNodes } from "./flows/cycle";
 import { releaseEdges, releaseMeta, releaseNodes } from "./flows/release";
 import { rolesEdges, rolesMeta, rolesNodes } from "./flows/roles";
@@ -8,6 +9,7 @@ const tabs = [
   { id: "cycle", meta: cycleMeta, nodes: cycleNodes, edges: cycleEdges },
   { id: "roles", meta: rolesMeta, nodes: rolesNodes, edges: rolesEdges },
   { id: "release", meta: releaseMeta, nodes: releaseNodes, edges: releaseEdges },
+  { id: "audit", meta: auditMeta, nodes: auditNodes, edges: auditEdges },
 ] as const;
 
 type TabId = (typeof tabs)[number]["id"];

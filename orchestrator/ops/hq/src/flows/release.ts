@@ -94,13 +94,24 @@ export const releaseNodes: AnyNode[] = [
     },
   },
   {
+    id: "deploy",
+    type: "stage",
+    position: { x: 1400, y: 20 },
+    data: {
+      kicker: "Prod",
+      title: "Автодеплой на VPS",
+      body: "gift-sales, shoppable-feed — build и restart после merge.",
+      tone: "green",
+    },
+  },
+  {
     id: "done",
     type: "stage",
-    position: { x: 1400, y: 140 },
+    position: { x: 1680, y: 140 },
     data: {
       kicker: "Done",
       title: "Карточка закрыта",
-      body: "Цикл цели завершён.",
+      body: "Цикл цели завершён, prod обновлён.",
       tone: "green",
       handles: { target: true, source: false },
     },
@@ -134,7 +145,8 @@ export const releaseEdges: Edge[] = [
   },
   { id: "x4", source: "phrase", target: "bump" },
   { id: "x5", source: "bump", target: "merge" },
-  { id: "x6", source: "merge", target: "done" },
+  { id: "x6", source: "merge", target: "deploy" },
+  { id: "x6b", source: "deploy", target: "done" },
   {
     id: "x7",
     source: "sync",
@@ -161,11 +173,11 @@ export const releaseEdges: Edge[] = [
 export const releaseMeta = {
   label: "Релиз",
   title: "Как карточка уходит в Done",
-  lead: "Один и тот же жест на доске — два исхода: релиз или только sync main.",
+  lead: "Один жест на доске — релиз или sync main; web-продукты после merge уезжают на prod сами.",
   points: [
     {
       title: "С фразой",
-      body: "«Релизь» → bump → merge → Done.",
+      body: "«Релизь» → bump → merge → автодеплой → Done.",
     },
     {
       title: "Без фразы",

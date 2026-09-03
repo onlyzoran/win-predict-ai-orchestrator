@@ -43,7 +43,7 @@ export const rolesNodes: AnyNode[] = [
     position: { x: 800, y: 0 },
     data: {
       title: "Ревьюер",
-      body: "Вердикт по PR",
+      body: "PR + Playwright по demo",
       tone: "blue",
     },
   },
@@ -161,7 +161,7 @@ export const rolesMeta = {
     },
     {
       title: "Ревьюер и вотчер",
-      body: "Проверяют PR и проводят доску до Done.",
+      body: "Визуальная проверка demo, merge и автодеплой web-продуктов.",
     },
   ],
 };

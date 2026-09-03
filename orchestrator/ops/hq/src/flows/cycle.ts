@@ -42,7 +42,7 @@ export const cycleNodes: Array<StageNode | NoteNode> = [
   {
     id: "work",
     type: "stage",
-    position: { x: 780, y: 40 },
+    position: { x: 720, y: 40 },
     data: {
       kicker: "Исполнители",
       title: "Работа в репозиториях",
@@ -51,31 +51,42 @@ export const cycleNodes: Array<StageNode | NoteNode> = [
     },
   },
   {
+    id: "preview",
+    type: "stage",
+    position: { x: 960, y: 40 },
+    data: {
+      kicker: "Demo",
+      title: "Preview на VPS",
+      body: "board-watch поднимает URL по Goal до ревью (gift-sales, feed…).",
+      tone: "accent",
+    },
+  },
+  {
     id: "review",
     type: "stage",
-    position: { x: 1040, y: 120 },
+    position: { x: 1200, y: 120 },
     data: {
       kicker: "Ревью",
-      title: "Проверка PR",
-      body: "pass / blocked → колонка Review; changes → снова в работу.",
+      title: "Проверка PR + экран",
+      body: "Playwright MCP и diff; pass/blocked → Review; changes → в работу.",
       tone: "blue",
     },
   },
   {
     id: "accept",
     type: "stage",
-    position: { x: 1300, y: 120 },
+    position: { x: 1460, y: 120 },
     data: {
       kicker: "Приёмка",
-      title: "Вы смотрите результат",
-      body: "Контроль остаётся у человека.",
+      title: "Вы смотрите demo",
+      body: "Preview URL и PR — решение за человеком.",
       tone: "warm",
     },
   },
   {
     id: "release",
     type: "stage",
-    position: { x: 1560, y: 40 },
+    position: { x: 1720, y: 40 },
     data: {
       kicker: "Релиз",
       title: "«Релизь» + In Progress",
@@ -86,7 +97,7 @@ export const cycleNodes: Array<StageNode | NoteNode> = [
   {
     id: "done",
     type: "stage",
-    position: { x: 1820, y: 120 },
+    position: { x: 1980, y: 120 },
     data: {
       kicker: "Done",
       title: "Цель закрыта",
@@ -98,7 +109,7 @@ export const cycleNodes: Array<StageNode | NoteNode> = [
   {
     id: "fix",
     type: "stage",
-    position: { x: 1040, y: 300 },
+    position: { x: 1200, y: 300 },
     data: {
       kicker: "Правки",
       title: "Снова В работе",
@@ -121,7 +132,8 @@ export const cycleEdges: Edge[] = [
   { id: "e1", source: "inbox", target: "start", label: "жест" },
   { id: "e2", source: "start", target: "plan" },
   { id: "e3", source: "plan", target: "work" },
-  { id: "e4", source: "work", target: "review", label: "PR" },
+  { id: "e4", source: "work", target: "preview", label: "PR" },
+  { id: "e4b", source: "preview", target: "review", label: "demo" },
   { id: "e5", source: "review", target: "accept", label: "pass" },
   {
     id: "e6",
@@ -146,23 +158,23 @@ export const cycleEdges: Edge[] = [
 export const cycleMeta = {
   label: "Цикл",
   title: "Жизненный цикл цели",
-  lead: "От формулировки до Done — через план, работу, ревью и вашу команду на релиз.",
+  lead: "От формулировки до Done — план, PR, demo на VPS, визуальное ревью и ваша команда на релиз.",
   points: [
     {
       title: "Старт",
       body: "Карточка Inbox → В работе (или /orchestrate).",
     },
     {
-      title: "План и исполнение",
-      body: "Стратег режет цель, исполнители открывают PR.",
+      title: "Preview",
+      body: "До ревью поднимается demo URL по номеру Goal.",
     },
     {
       title: "Ревью и правки",
-      body: "pass ведёт к приёмке; changes возвращают в работу.",
+      body: "Playwright + diff; pass → приёмка; changes → MODE B.",
     },
     {
       title: "Релиз",
-      body: "Фраза «релизь» + жест на доске закрывает цикл.",
+      body: "«Релизь» + жест на доске; web-продукты уезжают на prod автоматически.",
     },
   ],
 };
