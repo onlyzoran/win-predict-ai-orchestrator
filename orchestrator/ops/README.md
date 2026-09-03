@@ -27,7 +27,7 @@ chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/ensure
 
 На VPS нет Xcode — воркер правит Swift/ресурсы и открывает PR; сборка на Mac человека.
 
-Прод и preview: `http://202.71.15.138/gift-sales/` и `…/preview/issue-<N>/`. Установка nginx + systemd: `orchestrator/ops/install-gift-sales.sh` (от root после `git pull`).
+Прод и preview: `http://202.71.15.138/gift-sales/` и `…/preview/issue-<N>/`. Установка nginx + systemd: `orchestrator/ops/install-gift-sales.sh` (от root после `git pull`). После merge PR в релизе Goal оркестратор запускает `gift-sales-deploy.sh` (клон `/opt/cursor-workers/gift-sales`, `npm ci && build`, `systemctl restart gift-sales.service`).
 
 ## Board watch
 

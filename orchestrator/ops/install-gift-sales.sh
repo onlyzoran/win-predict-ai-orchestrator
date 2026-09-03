@@ -56,6 +56,14 @@ if [[ -n ${CERT_LIVE:-} ]]; then
 fi
 echo "Preview root:  $PREVIEW_ROOT"
 echo "Systemd unit:  $UNIT (PORT=3002)"
+
+SUDOERS=/etc/sudoers.d/cursor-worker-gift-sales-deploy
+cat > "$SUDOERS" <<'EOF'
+cursor-worker ALL=(ALL) NOPASSWD: /bin/systemctl restart gift-sales.service, /bin/systemctl enable gift-sales.service, /bin/systemctl start gift-sales.service
+EOF
+chmod 440 "$SUDOERS"
+chmod +x "$ROOT/orchestrator/ops/gift-sales-deploy.sh"
+echo "Sudoers:       $SUDOERS (board-watch может restart gift-sales)"
 echo
 echo "Проверка: nginx -t && systemctl reload nginx"
 echo "URL: http://202.71.15.138/gift-sales/ (demo тоже HTTP; https://IP без своего имени)"

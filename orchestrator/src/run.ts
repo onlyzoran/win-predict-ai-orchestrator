@@ -1564,6 +1564,13 @@ const VPS_PREVIEW_SCRIPTS: Record<string, { script: string; ifMissingEnv: string
   },
 };
 
+const VPS_PROD_DEPLOY: Record<string, { script: string; url: string }> = {
+  "onlyzoran/gift-sales": {
+    script: "gift-sales-deploy.sh",
+    url: "http://202.71.15.138/gift-sales/",
+  },
+};
+
 /** Generic main from MODE A — preview script resolves open PR head by Goal marker. */
 function previewScriptRef(headRef?: string): string | undefined {
   const ref = headRef?.trim();
@@ -1604,6 +1611,26 @@ function ensureVpsPreview(
   if (result.status !== 0) {
     console.warn(`preview ${task.repo}: ${(result.stderr || result.stdout || "failed").trim()}`);
   }
+}
+
+function ensureVpsProdDeploy(task: Task, mergeSha?: string): string | undefined {
+  const config = VPS_PROD_DEPLOY[task.repo];
+  if (!config) return undefined;
+  const script = join(ROOT, "orchestrator/ops", config.script);
+  if (!existsSync(script)) {
+    console.warn(`prod deploy ${task.repo}: нет ${script}`);
+    return undefined;
+  }
+  const args = [script];
+  if (mergeSha?.trim()) args.push(mergeSha.trim());
+  console.log(`prod deploy ${task.repo}: bash ${args.join(" ")}`);
+  const result = spawnSync("bash", args, { encoding: "utf8", env: process.env });
+  if (result.status !== 0) {
+    const msg = (result.stderr || result.stdout || "failed").trim();
+    console.warn(`prod deploy ${task.repo}: ${msg}`);
+    return `${task.id}: prod deploy ошибка — ${msg.slice(0, 200)}`;
+  }
+  return `${task.id}: prod ${config.url}`;
 }
 
 async function runReviewer(
@@ -3438,6 +3465,8 @@ async function handleGoalRelease(item: BoardIssue, token: string): Promise<void>
           );
         }
       }
+      const deployNote = ensureVpsProdDeploy(task, mergeSha);
+      if (deployNote) notes.push(deployNote);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       notes.push(`${task.id}: ошибка — ${message.slice(0, 300)}`);
