@@ -53,15 +53,13 @@ resolve_ref() {
 }
 
 restart_preview_service() {
-  if systemctl is-active --quiet shoppable-feed-preview.service 2>/dev/null; then
-    systemctl restart shoppable-feed-preview.service 2>/dev/null || sudo systemctl restart shoppable-feed-preview.service
-  elif [[ $EUID -eq 0 ]]; then
-    systemctl enable --now shoppable-feed-preview.service
-  else
-    sudo systemctl enable --now shoppable-feed-preview.service 2>/dev/null || {
-      echo "build ok — от root: systemctl enable --now shoppable-feed-preview.service" >&2
-    }
+  if [[ $EUID -eq 0 ]]; then
+    /bin/systemctl restart shoppable-feed-preview.service 2>/dev/null || /bin/systemctl enable --now shoppable-feed-preview.service
+    return
   fi
+  sudo -n /bin/systemctl restart shoppable-feed-preview.service 2>/dev/null || sudo -n /bin/systemctl enable --now shoppable-feed-preview.service || {
+    echo "build ok — от root: systemctl restart shoppable-feed-preview.service" >&2
+  }
 }
 
 exec 9>"/tmp/shoppable-feed-preview.lock"

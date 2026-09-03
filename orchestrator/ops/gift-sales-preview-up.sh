@@ -53,15 +53,14 @@ resolve_ref() {
 }
 
 restart_preview_service() {
-  if systemctl is-active --quiet gift-sales-preview.service 2>/dev/null; then
-    systemctl restart gift-sales-preview.service 2>/dev/null || sudo systemctl restart gift-sales-preview.service
-  elif [[ $EUID -eq 0 ]]; then
-    systemctl enable --now gift-sales-preview.service
-  else
-    sudo systemctl enable --now gift-sales-preview.service 2>/dev/null || {
-      echo "build ok — от root: systemctl enable --now gift-sales-preview.service" >&2
-    }
+  # sudoers allows only /bin/systemctl restart|enable|start (not a PATH lookup).
+  if [[ $EUID -eq 0 ]]; then
+    /bin/systemctl restart gift-sales-preview.service 2>/dev/null || /bin/systemctl enable --now gift-sales-preview.service
+    return
   fi
+  sudo -n /bin/systemctl restart gift-sales-preview.service 2>/dev/null || sudo -n /bin/systemctl enable --now gift-sales-preview.service || {
+    echo "build ok — от root: systemctl restart gift-sales-preview.service" >&2
+  }
 }
 
 exec 9>"/tmp/gift-sales-preview.lock"
@@ -110,18 +109,19 @@ import os
 from pathlib import Path
 
 base = os.environ["GIFT_SALES_BASE_PATH"]
-Path("next.config.ts").write_text(
-    f'''import type {{ NextConfig }} from "next";
-
-const nextConfig: NextConfig = {{
+Path("next.config.mjs").write_text(
+    f'''/** @type {{import("next").NextConfig}} */
+const nextConfig = {{
   basePath: "{base}",
   trailingSlash: true,
   transpilePackages: ["antd", "@ant-design/icons"],
+  serverExternalPackages: ["better-sqlite3"],
 }};
 
 export default nextConfig;
 '''
 )
+Path("next.config.ts").unlink(missing_ok=True)
 PY
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
