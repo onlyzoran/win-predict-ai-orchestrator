@@ -2,6 +2,7 @@
 
 export const WORKING_LABEL = "working";
 export const REVIEWING_LABEL = "reviewing";
+export const RELEASING_LABEL = "releasing";
 
 const STATE_RE = /<!-- orchestrator-state:(.*?) -->/;
 
@@ -52,6 +53,23 @@ export function shouldHaveReviewingLabel(
   return isActivePhaseLabel(state, "reviewing", now, staleMs);
 }
 
+export function shouldHaveReleasingLabel(
+  state: PhaseLabelState | undefined,
+  now = Date.now(),
+  staleMs = 3 * 60 * 60 * 1000,
+): boolean {
+  return isActivePhaseLabel(state, "releasing", now, staleMs);
+}
+
+/** Latest active releasing dispatch (goal-level). */
+export function releasingStateForLabels(comments: DispatchComment[]): PhaseLabelState | undefined {
+  for (const comment of [...comments].reverse()) {
+    const state = parseDispatchStateBody(comment.body);
+    if (state?.phase === "releasing" && !state.taskId) return state;
+  }
+  return undefined;
+}
+
 /** Latest active reviewing dispatch (goal- or task-level). */
 export function reviewingStateForLabels(comments: DispatchComment[]): PhaseLabelState | undefined {
   for (const comment of [...comments].reverse()) {
@@ -75,19 +93,22 @@ export function goalLevelWorkingStateForLabels(comments: DispatchComment[]): Pha
   return undefined;
 }
 
-/** Board sync: working only on queue head; reviewing from any dispatch level. */
+/** Board sync: working only on queue head; reviewing/releasing from dispatch state. */
 export function resolveGoalPhaseLabels(
   comments: DispatchComment[],
   isQueueHead: boolean,
   now = Date.now(),
   staleMs = 3 * 60 * 60 * 1000,
-): { working: boolean; reviewing: boolean } {
-  const reviewing = shouldHaveReviewingLabel(reviewingStateForLabels(comments), now, staleMs);
+): { working: boolean; reviewing: boolean; releasing: boolean } {
+  const releasing = shouldHaveReleasingLabel(releasingStateForLabels(comments), now, staleMs);
+  const reviewing =
+    !releasing && shouldHaveReviewingLabel(reviewingStateForLabels(comments), now, staleMs);
   const working =
     isQueueHead &&
     !reviewing &&
+    !releasing &&
     shouldHaveWorkingLabel(goalLevelWorkingStateForLabels(comments), now, staleMs);
-  return { working, reviewing };
+  return { working, reviewing, releasing };
 }
 
 /** Immediate sync right after posting a dispatch comment. */
@@ -95,13 +116,18 @@ export function phaseLabelsAfterDispatch(
   state: PhaseLabelState | undefined,
   now = Date.now(),
   staleMs = 3 * 60 * 60 * 1000,
-): { working: boolean; reviewing: boolean } {
-  const reviewing = state?.phase === "reviewing" && shouldHaveReviewingLabel(state, now, staleMs);
+): { working: boolean; reviewing: boolean; releasing: boolean } {
+  const releasing = state?.phase === "releasing" && shouldHaveReleasingLabel(state, now, staleMs);
+  const reviewing =
+    state?.phase === "reviewing" &&
+    !releasing &&
+    shouldHaveReviewingLabel(state, now, staleMs);
   const working =
     state?.phase === "working" &&
     !reviewing &&
+    !releasing &&
     shouldHaveWorkingLabel(state, now, staleMs);
-  return { working, reviewing };
+  return { working, reviewing, releasing };
 }
 
 function extractDispatchNotes(body: string): string[] {

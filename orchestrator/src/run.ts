@@ -54,6 +54,7 @@ import { goalQueueWaiting, pickGoalQueueHead } from "./goal-queue.js";
 import {
   phaseLabelsAfterDispatch,
   resolveGoalPhaseLabels,
+  RELEASING_LABEL,
   REVIEWING_LABEL,
   WORKING_LABEL,
 } from "./goal-working-label.js";
@@ -1184,6 +1185,24 @@ function ensureReviewingLabel(token: string): void {
   );
 }
 
+function ensureReleasingLabel(token: string): void {
+  gh(
+    [
+      "label",
+      "create",
+      RELEASING_LABEL,
+      "-R",
+      GOAL_REPO,
+      "--color",
+      "0e8a16",
+      "--description",
+      "оркестратор релизит Goal",
+      "--force",
+    ],
+    token,
+  );
+}
+
 function syncGoalPhaseLabel(
   issueNumber: number,
   label: string,
@@ -1200,14 +1219,16 @@ function syncGoalPhaseLabel(
 
 function applyGoalPhaseLabels(
   issueNumber: number,
-  flags: { working: boolean; reviewing: boolean },
+  flags: { working: boolean; reviewing: boolean; releasing: boolean },
   token: string,
 ): void {
   ensureWorkingLabel(token);
   ensureReviewingLabel(token);
+  ensureReleasingLabel(token);
   const labels = fetchIssue(GOAL_REPO, issueNumber, token).labels.map((l) => l.name);
   syncGoalPhaseLabel(issueNumber, WORKING_LABEL, flags.working, labels, token);
   syncGoalPhaseLabel(issueNumber, REVIEWING_LABEL, flags.reviewing, labels, token);
+  syncGoalPhaseLabel(issueNumber, RELEASING_LABEL, flags.releasing, labels, token);
 }
 
 function commentGoalDispatch(
@@ -2616,7 +2637,7 @@ function postNonReadyPlan(issue: IssueCommentEvent["issue"], plan: Plan, token: 
     ].join("\n"),
   );
   addToProject(issue.html_url, "Review", token);
-  applyGoalPhaseLabels(issue.number, { working: false, reviewing: false }, token);
+  applyGoalPhaseLabels(issue.number, { working: false, reviewing: false, releasing: false }, token);
 }
 
 async function decompose(
@@ -2738,7 +2759,7 @@ async function commentDispatch(
   }
   if (promotedToReview) {
     const fresh = listIssueComments(GOAL_REPO, goalNumber, token);
-    applyGoalPhaseLabels(goalNumber, { working: false, reviewing: false }, token);
+    applyGoalPhaseLabels(goalNumber, { working: false, reviewing: false, releasing: false }, token);
     return !failed && !allSkipped;
   }
   const state: DispatchState = failed

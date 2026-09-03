@@ -158,10 +158,12 @@ describe("resolveGoalPhaseLabels", () => {
     assert.deepEqual(resolveGoalPhaseLabels(comments, true, now, staleMs), {
       working: true,
       reviewing: false,
+      releasing: false,
     });
     assert.deepEqual(resolveGoalPhaseLabels(comments, false, now, staleMs), {
       working: false,
       reviewing: false,
+      releasing: false,
     });
   });
 
@@ -170,6 +172,21 @@ describe("resolveGoalPhaseLabels", () => {
     assert.deepEqual(resolveGoalPhaseLabels(comments, true, now, staleMs), {
       working: false,
       reviewing: true,
+      releasing: false,
+    });
+  });
+
+  it("releasing suppresses working and reviewing", () => {
+    const releasing = [
+      "<!-- orchestrator-dispatch -->",
+      '<!-- orchestrator-state:{"phase":"releasing","at":"2026-01-01T00:40:00.000Z"} -->',
+      "releasing",
+    ].join("\n");
+    const comments = [{ body: goalWorking }, { body: taskReviewing }, { body: releasing }];
+    assert.deepEqual(resolveGoalPhaseLabels(comments, true, now, staleMs), {
+      working: false,
+      reviewing: false,
+      releasing: true,
     });
   });
 });
