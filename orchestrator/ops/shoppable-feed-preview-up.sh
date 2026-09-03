@@ -102,23 +102,27 @@ git checkout -f --detach "$REF"
 git reset --hard "$REF"
 git clean -fd -e node_modules -e .next
 
-python3 - <<'PY'
+export SHOPPABLE_FEED_BASE_PATH="$BASE_PATH"
+python3 - <<PY
+import os
 from pathlib import Path
-Path("next.config.ts").write_text(
-    """import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  basePath: process.env.SHOPPABLE_FEED_BASE_PATH || "/shoppable-feed",
+base = os.environ["SHOPPABLE_FEED_BASE_PATH"]
+Path("next.config.ts").write_text(
+    f'''import type {{ NextConfig }} from "next";
+
+const nextConfig: NextConfig = {{
+  basePath: "{base}",
   trailingSlash: true,
-};
+}};
 
 export default nextConfig;
-"""
+'''
 )
 PY
 
 npm ci
-SHOPPABLE_FEED_BASE_PATH="$BASE_PATH" npm run build
+npm run build
 
 mkdir -p "$PREVIEW_APP"
 rsync -a --delete \
@@ -132,6 +136,7 @@ echo "$REF" > "$TARGET/.preview-ref"
 echo "$GOAL" > "$TARGET/.preview-ready"
 echo "$GOAL" > "$PREVIEW_APP/.preview-goal"
 echo "$REF" > "$PREVIEW_APP/.preview-ref"
+printf 'SHOPPABLE_FEED_BASE_PATH=%s\n' "$BASE_PATH" > "$PREVIEW_APP/preview.env"
 
 restart_preview_service
 

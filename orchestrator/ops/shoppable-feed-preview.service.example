@@ -9,6 +9,7 @@ User=cursor-worker
 Group=cursor-worker
 WorkingDirectory=/opt/cursor-workers/shoppable-feed-preview-run
 EnvironmentFile=-/etc/cursor-worker.env
+EnvironmentFile=-/opt/cursor-workers/shoppable-feed-preview-run/preview.env
 Environment=NODE_ENV=production
 Environment=PORT=3004
 Environment=HOSTNAME=127.0.0.1
