@@ -52,10 +52,9 @@ import {
 } from "./release.js";
 import { goalQueueWaiting, pickGoalQueueHead } from "./goal-queue.js";
 import {
-  isPostPromoteWorkingEcho,
+  phaseLabelsAfterDispatch,
+  resolveGoalPhaseLabels,
   REVIEWING_LABEL,
-  shouldHaveReviewingLabel,
-  shouldHaveWorkingLabel,
   WORKING_LABEL,
 } from "./goal-working-label.js";
 import { IDLE_DISPATCH_HINT, recentlyIdleDispatchNotified, taskOpenPrNeedsReview } from "./goal-idle.js";
@@ -590,17 +589,6 @@ function lastGoalDispatchState(comments: IssueComment[]): DispatchState | undefi
   for (const comment of [...comments].reverse()) {
     const state = parseDispatchState(comment.body);
     if (state && !state.taskId) return state;
-  }
-  return undefined;
-}
-
-/** Goal-level dispatch for phase labels; skips post-promote working echo. */
-function goalDispatchStateForLabels(comments: IssueComment[]): DispatchState | undefined {
-  for (const comment of [...comments].reverse()) {
-    const state = parseDispatchState(comment.body);
-    if (!state || state.taskId) continue;
-    if (state.phase === "working" && isPostPromoteWorkingEcho(comment.body)) continue;
-    return state;
   }
   return undefined;
 }
@@ -1205,25 +1193,16 @@ function syncGoalPhaseLabel(
   }
 }
 
-function syncGoalPhaseLabels(issueNumber: number, state: DispatchState | undefined, token: string): void {
+function applyGoalPhaseLabels(
+  issueNumber: number,
+  flags: { working: boolean; reviewing: boolean },
+  token: string,
+): void {
   ensureWorkingLabel(token);
   ensureReviewingLabel(token);
   const labels = fetchIssue(GOAL_REPO, issueNumber, token).labels.map((l) => l.name);
-  const now = Date.now();
-  syncGoalPhaseLabel(
-    issueNumber,
-    WORKING_LABEL,
-    shouldHaveWorkingLabel(state, now, WORKING_STALE_MS),
-    labels,
-    token,
-  );
-  syncGoalPhaseLabel(
-    issueNumber,
-    REVIEWING_LABEL,
-    shouldHaveReviewingLabel(state, now, WORKING_STALE_MS),
-    labels,
-    token,
-  );
+  syncGoalPhaseLabel(issueNumber, WORKING_LABEL, flags.working, labels, token);
+  syncGoalPhaseLabel(issueNumber, REVIEWING_LABEL, flags.reviewing, labels, token);
 }
 
 function commentGoalDispatch(
@@ -1239,7 +1218,7 @@ function commentGoalDispatch(
     return;
   }
   commentOnIssue(GOAL_REPO, issueNumber, body, t);
-  syncGoalPhaseLabels(issueNumber, state, t);
+  applyGoalPhaseLabels(issueNumber, phaseLabelsAfterDispatch(state, Date.now(), WORKING_STALE_MS), t);
 }
 
 function graphql<T>(token: string, query: string, variables: Record<string, string | null | undefined>): T {
@@ -2605,7 +2584,7 @@ function postNonReadyPlan(issue: IssueCommentEvent["issue"], plan: Plan, token: 
     ].join("\n"),
   );
   addToProject(issue.html_url, "Review", token);
-  syncGoalPhaseLabels(issue.number, undefined, token);
+  applyGoalPhaseLabels(issue.number, { working: false, reviewing: false }, token);
 }
 
 async function decompose(
@@ -2727,7 +2706,7 @@ async function commentDispatch(
   }
   if (promotedToReview) {
     const fresh = listIssueComments(GOAL_REPO, goalNumber, token);
-    syncGoalPhaseLabels(goalNumber, goalDispatchStateForLabels(fresh), token);
+    applyGoalPhaseLabels(goalNumber, { working: false, reviewing: false }, token);
     return !failed && !allSkipped;
   }
   const state: DispatchState = failed
@@ -3571,7 +3550,12 @@ async function watchBoard(): Promise<void> {
 
     for (const goal of goals) {
       const comments = listIssueComments(goal.repo, goal.number, token);
-      syncGoalPhaseLabels(goal.number, goalDispatchStateForLabels(comments), token);
+      const isHead = head?.number === goal.number;
+      applyGoalPhaseLabels(
+        goal.number,
+        resolveGoalPhaseLabels(comments, isHead, Date.now(), WORKING_STALE_MS),
+        token,
+      );
     }
 
     for (const goal of waiting) {

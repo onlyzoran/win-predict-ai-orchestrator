@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   isPostPromoteWorkingEcho,
+  resolveGoalPhaseLabels,
   shouldHaveReviewingLabel,
   shouldHaveWorkingLabel,
 } from "./goal-working-label.js";
@@ -133,5 +134,42 @@ describe("isPostPromoteWorkingEcho", () => {
       ),
       false,
     );
+  });
+});
+
+describe("resolveGoalPhaseLabels", () => {
+  const now = Date.parse("2026-01-01T01:00:00.000Z");
+  const staleMs = 3 * 60 * 60 * 1000;
+
+  const goalWorking = [
+    "<!-- orchestrator-dispatch -->",
+    '<!-- orchestrator-state:{"phase":"working","at":"2026-01-01T00:30:00.000Z"} -->',
+    "working",
+  ].join("\n");
+
+  const taskReviewing = [
+    "<!-- orchestrator-dispatch -->",
+    '<!-- orchestrator-state:{"phase":"reviewing","taskId":"feed-x","at":"2026-01-01T00:35:00.000Z"} -->',
+    "reviewing",
+  ].join("\n");
+
+  it("working only on queue head", () => {
+    const comments = [{ body: goalWorking }];
+    assert.deepEqual(resolveGoalPhaseLabels(comments, true, now, staleMs), {
+      working: true,
+      reviewing: false,
+    });
+    assert.deepEqual(resolveGoalPhaseLabels(comments, false, now, staleMs), {
+      working: false,
+      reviewing: false,
+    });
+  });
+
+  it("reviewing from task-level dispatch suppresses working", () => {
+    const comments = [{ body: goalWorking }, { body: taskReviewing }];
+    assert.deepEqual(resolveGoalPhaseLabels(comments, true, now, staleMs), {
+      working: false,
+      reviewing: true,
+    });
   });
 });
