@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prod deploy gift-sales: http://202.71.15.138/gift-sales/
+# Prod deploy gift-sales: https://gift-sales.store/
 # Usage: gift-sales-deploy.sh [git-ref]
 set -euo pipefail
 
@@ -60,10 +60,33 @@ git checkout -f --detach "$REF"
 git reset --hard "$REF"
 git clean -fd -e node_modules -e .next
 
+# Прод на корне домена. Репо по умолчанию basePath /gift-sales (для preview на IP).
+python3 - <<'PY'
+from pathlib import Path
+
+cfg = Path("next.config.ts")
+if cfg.exists():
+    text = cfg.read_text()
+    old = 'basePath: process.env.GIFT_SALES_BASE_PATH || "/gift-sales"'
+    if old not in text:
+        raise SystemExit("next.config.ts: не нашёл basePath для патча")
+    cfg.write_text(text.replace(old, 'basePath: ""', 1))
+else:
+    raise SystemExit("нет next.config.ts")
+
+paths = Path("src/lib/api/paths.ts")
+if paths.exists():
+    text = paths.read_text()
+    old = 'export const API_BASE_PATH = "/gift-sales";'
+    if old not in text:
+        raise SystemExit("paths.ts: не нашёл API_BASE_PATH для патча")
+    paths.write_text(text.replace(old, 'export const API_BASE_PATH = "";', 1))
+PY
+
 /usr/bin/npm ci
 # next start держит .next; сборка поверх живого процесса отдаёт HTML с хешами, которых сервер ещё не видит.
 stop_service
 /usr/bin/npm run build
 restart_service
 
-echo "prod: http://202.71.15.138/gift-sales/"
+echo "prod: https://gift-sales.store/"

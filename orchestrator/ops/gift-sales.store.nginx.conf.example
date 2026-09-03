@@ -1,0 +1,21 @@
+# Nginx vhost for gift-sales.store (прод на корне).
+# Install: /etc/nginx/sites-available/gift-sales.store
+#   ln -s ... sites-enabled && nginx -t && systemctl reload nginx
+#
+# DNS (Namecheap Advanced DNS), A → this VPS:
+#   @    A    202.71.15.138
+#   www  A    202.71.15.138
+#
+# TLS after HTTP answers on this host:
+#   certbot --nginx -d gift-sales.store -d www.gift-sales.store
+#
+# Не перезаписывай существующий сайт с TLS — только snippet gift-sales-domain.conf.
+# Preview Goal остаётся на IP: http://202.71.15.138/gift-sales/preview/issue-<N>/
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name gift-sales.store www.gift-sales.store;
+
+    include /etc/nginx/snippets/gift-sales-domain.conf;
+}

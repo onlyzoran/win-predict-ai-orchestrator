@@ -1,5 +1,5 @@
 [Unit]
-Description=gift-sales Next.js (http://202.71.15.138/gift-sales/)
+Description=gift-sales Next.js (https://gift-sales.store/)
 After=network-online.target
 Wants=network-online.target
 

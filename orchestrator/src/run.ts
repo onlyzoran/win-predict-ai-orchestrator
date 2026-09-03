@@ -1598,7 +1598,7 @@ function deployTaskVpsPreview(
 const VPS_PROD_DEPLOY: Record<string, { script: string; url: string }> = {
   "onlyzoran/gift-sales": {
     script: "gift-sales-deploy.sh",
-    url: "http://202.71.15.138/gift-sales/",
+    url: "https://gift-sales.store/",
   },
 };
 

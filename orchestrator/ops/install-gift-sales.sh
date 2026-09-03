@@ -2,14 +2,18 @@
 set -euo pipefail
 
 # Один раз от root на VPS после первого deploy Next.js в gift-sales.
-# Прод:  http://202.71.15.138/gift-sales/
-# Demo:  http://202.71.15.138/gift-sales/preview/issue-<N>/
+# Прод (домен): https://gift-sales.store/
+# Demo:         http://202.71.15.138/gift-sales/preview/issue-<N>/
+# Старый путь /gift-sales/ на IP и домене редиректит на корень домена.
 
 ROOT=/opt/cursor-workers/win-predict-ai-orchestrator
 SNIPPET=/etc/nginx/snippets/gift-sales.conf
 IP_SITE=/etc/nginx/sites-available/gift-sales-ip
 IP_SSL_SITE=/etc/nginx/sites-available/gift-sales-ip-ssl
 IP_SSL_EXAMPLE="$ROOT/orchestrator/ops/gift-sales-ip-ssl.nginx.conf.example"
+DOMAIN_SITE=/etc/nginx/sites-available/gift-sales.store
+DOMAIN_NGINX_SRC="$ROOT/orchestrator/ops/gift-sales.store.nginx.conf.example"
+DOMAIN_SNIPPET=/etc/nginx/snippets/gift-sales-domain.conf
 PREVIEW_ROOT=/var/www/gift-sales-preview
 PROD_APP=/var/www/gift-sales
 UNIT=/etc/systemd/system/gift-sales.service
@@ -41,12 +45,23 @@ if [[ ! -d $PROD_APP/.git ]]; then
   sudo -u cursor-worker "${clone[@]}"
 fi
 install -m 644 "$ROOT/orchestrator/ops/gift-sales.nginx.conf" "$SNIPPET"
+install -m 644 "$ROOT/orchestrator/ops/gift-sales-domain.nginx.conf" "$DOMAIN_SNIPPET"
 install -m 644 "$ROOT/orchestrator/ops/gift-sales-ip.nginx.conf" "$IP_SITE"
 install -m 644 "$ROOT/orchestrator/ops/gift-sales.service.example" "$UNIT"
 install -m 644 "$ROOT/orchestrator/ops/gift-sales-preview.service.example" "$PREVIEW_UNIT"
 chmod +x "$ROOT/orchestrator/ops/gift-sales-preview-up.sh"
 chmod +x "$ROOT/orchestrator/ops/gift-sales-deploy.sh"
 ln -sf "$IP_SITE" /etc/nginx/sites-enabled/gift-sales-ip
+
+if [[ -f $DOMAIN_NGINX_SRC ]]; then
+  if [[ ! -f $DOMAIN_SITE ]]; then
+    install -m 644 "$DOMAIN_NGINX_SRC" "$DOMAIN_SITE"
+    ln -sf "$DOMAIN_SITE" /etc/nginx/sites-enabled/gift-sales.store
+    echo "HTTP domain site: $DOMAIN_SITE (TLS: certbot --nginx -d gift-sales.store -d www.gift-sales.store)"
+  else
+    echo "Domain site уже есть — не перезаписываю (чтобы не сбить TLS)."
+  fi
+fi
 
 CERT_LIVE=""
 for name in hq.win-predict-ai.com win-predict-ai.com secrets.win-predict-ai.com; do
@@ -98,9 +113,11 @@ echo "Sudoers:       $SUDOERS (board-watch может restart gift-sales)"
 echo "Preview sudo:  $PREVIEW_SUDOERS"
 echo
 echo "Проверка: nginx -t && systemctl reload nginx"
-echo "URL: http://202.71.15.138/gift-sales/ (demo тоже HTTP; https://IP без своего имени)"
+echo "URL: https://gift-sales.store/"
+echo "Demo: http://202.71.15.138/gift-sales/preview/issue-<N>/"
+echo "Домен: DNS A @ и www → 202.71.15.138, затем certbot --nginx -d gift-sales.store -d www.gift-sales.store"
 echo
 echo "Прод-клон: git clone …/gift-sales.git $PROD_APP (владелец cursor-worker)."
 echo "Воркер:    /opt/cursor-workers/gift-sales — не деплоить сюда."
-echo "После npm run build в $PROD_APP (basePath /gift-sales):"
+echo "После npm run build в $PROD_APP (basePath пустой, корень домена):"
 echo "    systemctl daemon-reload && systemctl enable --now gift-sales.service"
