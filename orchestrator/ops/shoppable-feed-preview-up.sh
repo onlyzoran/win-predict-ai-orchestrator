@@ -69,6 +69,10 @@ if [[ -z $REF ]]; then
   fi
 fi
 
+if [[ -n $REF ]]; then
+  REF="$(git rev-parse --verify "$REF^{commit}")"
+fi
+
 git checkout -f --detach "$REF"
 git reset --hard "$REF"
 git clean -fd -e node_modules -e .next -e out
