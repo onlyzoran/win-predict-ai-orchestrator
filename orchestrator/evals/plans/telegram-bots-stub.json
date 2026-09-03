@@ -1,0 +1,8 @@
+{
+  "goal_number": 10,
+  "summary": "Продукт telegram-bots ещё не активен (status: stub).",
+  "status": "needs_human",
+  "surfaces": [],
+  "human_gates": ["подключить репозитории продукта telegram-bots в registry"],
+  "tasks": []
+}

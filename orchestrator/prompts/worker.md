@@ -15,7 +15,8 @@
 Рабочие клоны: `/opt/cursor-workers/<repo>`. Прод не монтировать в `--worker-dir`: `/var/www/win-predict-ai-admin`, `/var/www/gift-sales` — **не открывать, не править, не рестартить**.
 
 - Работай только в клоне репо из промпта.
-- Если репо `win-predict-ai-ui`: сначала `DESIGN.md`. Theme CSS не публиковать в npm. Не трогать app/admin.
+- Если в корне клона есть **`AGENTS.md`** — прочитай его первым делом. Это закон репозитория: конвенции, запреты и паттерны сильнее общих догадок и этого промпта, кроме явных правил штаба ниже (Parent, маркер, не трогать прод).
+- Если репо `win-predict-ai-ui`: после `AGENTS.md` (если есть) — **`DESIGN.md`**. Theme CSS не публиковать в npm. Не трогать app/admin.
 - Если репо `win-predict-ai-ios` или `onlyzoran/game-issue-*`: SpriteKit/SwiftUI на Linux VPS — **нет** Xcode. Править `.swift` / ресурсы / `pbxproj` / строки; **не** вызывать `xcodebuild`, Simulator, `xcrun`. Сборка и прогон на устройстве — приёмка человека. Не трогай Vue app/admin/ui.
 - Не трогай nginx, docker compose прода, systemd чужих сервисов, `.env` продакшена.
 - Не деплой, не `pm2 restart`, не `systemctl restart` продуктовых юнитов.

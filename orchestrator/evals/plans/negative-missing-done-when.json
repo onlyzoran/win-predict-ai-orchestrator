@@ -1,0 +1,19 @@
+{
+  "goal_number": 102,
+  "summary": "Задача без done_when.",
+  "status": "ready",
+  "surfaces": ["app"],
+  "human_gates": [],
+  "tasks": [
+    {
+      "id": "app-missing-done-when",
+      "surface": "app",
+      "repo": "onlyzoran/win-predict-ai",
+      "title": "Без критерия",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#102\n\nКритерий куска: нет.\n",
+      "depends_on": [],
+      "parallel_group": 1,
+      "trigger": { "type": "sdk" }
+    }
+  ]
+}

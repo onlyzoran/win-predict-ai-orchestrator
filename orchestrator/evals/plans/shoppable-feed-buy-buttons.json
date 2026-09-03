@@ -1,0 +1,20 @@
+{
+  "goal_number": 54,
+  "summary": "Продающие кнопки на карточках ленты shoppable-feed.",
+  "status": "ready",
+  "surfaces": ["feed"],
+  "human_gates": ["приёмка UX на preview", "приёмка → In Progress + «релизь»"],
+  "tasks": [
+    {
+      "id": "feed-buy-buttons",
+      "surface": "feed",
+      "repo": "onlyzoran/shoppable-feed",
+      "title": "Кнопки покупки на карточках ленты",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#54\n\nДобавить продающие кнопки на карточках товаров.\n\nКритерий куска: кнопки видны на preview, PR готов к merge.\n",
+      "depends_on": [],
+      "parallel_group": 1,
+      "trigger": { "type": "sdk" },
+      "done_when": "PR в shoppable-feed зелёный, кнопки на карточках."
+    }
+  ]
+}

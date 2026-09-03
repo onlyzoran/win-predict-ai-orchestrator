@@ -1,0 +1,20 @@
+{
+  "goal_number": 65,
+  "summary": "API истории котировок в gift-sales.",
+  "status": "ready",
+  "surfaces": ["sales"],
+  "human_gates": ["приёмка на preview", "приёмка → In Progress + «релизь»"],
+  "tasks": [
+    {
+      "id": "sales-quotes-history-api",
+      "surface": "sales",
+      "repo": "onlyzoran/gift-sales",
+      "title": "API истории котировок GET /api/quotes/history",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#65\n\nРеализовать endpoint истории котировок.\n\nКритерий куска: endpoint отвечает на preview, PR готов к merge.\n",
+      "depends_on": [],
+      "parallel_group": 1,
+      "trigger": { "type": "sdk" },
+      "done_when": "PR в gift-sales зелёный, endpoint работает."
+    }
+  ]
+}

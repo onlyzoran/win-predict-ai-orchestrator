@@ -1,0 +1,8 @@
+{
+  "goal_number": 100,
+  "summary": "ready без задач.",
+  "status": "ready",
+  "surfaces": ["app"],
+  "human_gates": [],
+  "tasks": []
+}

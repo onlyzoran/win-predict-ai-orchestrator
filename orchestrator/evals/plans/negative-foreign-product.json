@@ -1,0 +1,31 @@
+{
+  "goal_number": 99,
+  "summary": "План с задачей чужого продукта.",
+  "status": "ready",
+  "surfaces": ["ui", "feed"],
+  "human_gates": [],
+  "tasks": [
+    {
+      "id": "ui-button",
+      "surface": "ui",
+      "repo": "onlyzoran/win-predict-ai-ui",
+      "title": "Кнопка в UI",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#99\n\nКритерий куска: PR готов.\n",
+      "depends_on": [],
+      "parallel_group": 1,
+      "trigger": { "type": "sdk" },
+      "done_when": "PR зелёный."
+    },
+    {
+      "id": "feed-foreign",
+      "surface": "feed",
+      "repo": "onlyzoran/shoppable-feed",
+      "title": "Чужой продукт",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#99\n\nКритерий куска: PR готов.\n",
+      "depends_on": [],
+      "parallel_group": 1,
+      "trigger": { "type": "sdk" },
+      "done_when": "PR зелёный."
+    }
+  ]
+}

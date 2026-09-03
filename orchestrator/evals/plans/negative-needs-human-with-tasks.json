@@ -1,0 +1,20 @@
+{
+  "goal_number": 101,
+  "summary": "needs_human с задачами.",
+  "status": "needs_human",
+  "surfaces": [],
+  "human_gates": ["человек"],
+  "tasks": [
+    {
+      "id": "orphan-task",
+      "surface": "app",
+      "repo": "onlyzoran/win-predict-ai",
+      "title": "Не должно быть",
+      "body": "Parent: onlyzoran/win-predict-ai-orchestrator#101\n\nКритерий куска: нет.\n",
+      "depends_on": [],
+      "parallel_group": 1,
+      "trigger": { "type": "sdk" },
+      "done_when": "нет."
+    }
+  ]
+}
