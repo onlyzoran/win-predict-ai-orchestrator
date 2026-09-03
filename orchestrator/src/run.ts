@@ -1585,6 +1585,13 @@ const VPS_PREVIEW_SCRIPTS: Record<string, { script: string; ifMissingEnv: string
   },
 };
 
+/** Generic main from MODE A — preview script resolves open PR head by Goal marker. */
+function previewScriptRef(headRef?: string): string | undefined {
+  const ref = headRef?.trim();
+  if (!ref || ref === "main" || ref === "master") return undefined;
+  return ref;
+}
+
 function ensureVpsPreview(
   task: Task,
   goalNumber: number,
@@ -1605,7 +1612,8 @@ function ensureVpsPreview(
     return;
   }
   const args = [script, String(goalNumber)];
-  if (headRef?.trim()) args.push(headRef.trim());
+  const ref = previewScriptRef(headRef);
+  if (ref) args.push(ref);
   console.log(`preview ${task.repo}: bash ${args.join(" ")}`);
   const result = spawnSync("bash", args, {
     encoding: "utf8",

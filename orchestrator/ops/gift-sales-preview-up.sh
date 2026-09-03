@@ -69,7 +69,7 @@ if [[ -z $REF ]]; then
   fi
 fi
 
-git checkout --detach "$REF"
+git checkout -f --detach "$REF"
 git reset --hard "$REF"
 git clean -fd -e node_modules -e .next -e out
 
