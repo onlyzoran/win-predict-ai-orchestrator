@@ -67,7 +67,7 @@ Goal Issue: заголовок, тело (Результат; опциональ
 |---|---|---|---|
 | продажи подарков, код в `gift-sales` | `sales` | `onlyzoran/gift-sales` | `sdk` |
 
-Деплой gift-sales: Next.js на корне (`basePath` пустой). Прод — `https://gift-sales.store/`, preview Goal — `http://202.71.15.138/gift-sales/preview/issue-<N>/`.
+Деплой gift-sales: Next.js на корне (`basePath` пустой). Прод — `https://gift-sales.store/`, preview Goal — `https://gift-sales.store/preview/issue-<N>/`.
 
 ## Маршрутизация (ios-games)
 

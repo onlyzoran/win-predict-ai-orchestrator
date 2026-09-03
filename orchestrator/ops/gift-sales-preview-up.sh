@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dynamic Goal preview for gift-sales (Next.js + API routes).
-# URL: http://202.71.15.138/gift-sales/preview/issue-<N>/
+# URL: https://gift-sales.store/preview/issue-<N>/
 # Usage: gift-sales-preview-up.sh <goal-number> [git-ref]
 set -euo pipefail
 
@@ -16,7 +16,7 @@ PREVIEW_ROOT="${GIFT_SALES_PREVIEW_ROOT:-/var/www/gift-sales-preview}"
 PREVIEW_APP="${GIFT_SALES_PREVIEW_APP:-/opt/cursor-workers/gift-sales-preview-run}"
 REPO="${GIFT_SALES_REPO:-onlyzoran/gift-sales}"
 SLUG="issue-${GOAL}"
-BASE_PATH="/gift-sales/preview/${SLUG}"
+BASE_PATH="/preview/${SLUG}"
 TARGET="${PREVIEW_ROOT}/${SLUG}"
 PREVIEW_PORT="${GIFT_SALES_PREVIEW_PORT:-3005}"
 
@@ -145,4 +145,4 @@ printf 'GIFT_SALES_BASE_PATH=%s\n' "$BASE_PATH" > "$PREVIEW_APP/preview.env"
 
 restart_preview_service
 
-echo "preview: http://202.71.15.138${BASE_PATH}/"
+echo "preview: https://gift-sales.store${BASE_PATH}/"

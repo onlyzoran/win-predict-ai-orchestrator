@@ -33,10 +33,10 @@ describe("previewUrlForPr", () => {
     );
   });
 
-  it("gift-sales preview на VPS", () => {
+  it("gift-sales preview на домене", () => {
     assert.equal(
       previewUrlForPr("https://github.com/onlyzoran/gift-sales/pull/1", GOAL),
-      "http://202.71.15.138/gift-sales/preview/issue-31/",
+      "https://gift-sales.store/preview/issue-31/",
     );
   });
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Один раз от root на VPS после первого deploy Next.js в gift-sales.
 # Прод (домен): https://gift-sales.store/
-# Demo:         http://202.71.15.138/gift-sales/preview/issue-<N>/
+# Demo:         https://gift-sales.store/preview/issue-<N>/
 # Старый путь /gift-sales/ на IP и домене редиректит на корень домена.
 
 ROOT=/opt/cursor-workers/win-predict-ai-orchestrator
@@ -114,7 +114,7 @@ echo "Preview sudo:  $PREVIEW_SUDOERS"
 echo
 echo "Проверка: nginx -t && systemctl reload nginx"
 echo "URL: https://gift-sales.store/"
-echo "Demo: http://202.71.15.138/gift-sales/preview/issue-<N>/"
+echo "Demo: https://gift-sales.store/preview/issue-<N>/"
 echo "Домен: DNS A @ и www → 202.71.15.138, затем certbot --nginx -d gift-sales.store -d www.gift-sales.store"
 echo
 echo "Прод-клон: git clone …/gift-sales.git $PROD_APP (владелец cursor-worker)."

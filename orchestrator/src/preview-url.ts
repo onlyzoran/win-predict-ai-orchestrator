@@ -17,8 +17,7 @@ export function previewUrlForPr(prUrl: string, goalNumber: number): string | und
     return `https://win-predict-ai.com/admin-preview/${slug}/`;
   }
   if (repo === "onlyzoran/gift-sales") {
-    // HTTP: TLS на IP нет своего имени. https://<ip>/ ловит первый 443-vhost (HQ SPA).
-    return `http://202.71.15.138/gift-sales/preview/${slug}/`;
+    return `https://gift-sales.store/preview/${slug}/`;
   }
   if (repo === "onlyzoran/shoppable-feed") {
     return `http://202.71.15.138/shoppable-feed/preview/${slug}/`;

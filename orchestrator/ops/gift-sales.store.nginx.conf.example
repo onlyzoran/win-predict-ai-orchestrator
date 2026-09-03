@@ -10,7 +10,7 @@
 #   certbot --nginx -d gift-sales.store -d www.gift-sales.store
 #
 # Не перезаписывай существующий сайт с TLS — только snippet gift-sales-domain.conf.
-# Preview Goal остаётся на IP: http://202.71.15.138/gift-sales/preview/issue-<N>/
+# Preview Goal: https://gift-sales.store/preview/issue-<N>/
 
 server {
     listen 80;

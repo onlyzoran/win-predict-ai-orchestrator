@@ -43,7 +43,7 @@
 |---|---|
 | [`gift-sales`](https://github.com/onlyzoran/gift-sales) | продажи подарков (единственный репо) |
 
-Сайт: [https://gift-sales.store/](https://gift-sales.store/). Preview PR: `http://202.71.15.138/gift-sales/preview/issue-<N>/`.
+Сайт: [https://gift-sales.store/](https://gift-sales.store/). Preview PR: `https://gift-sales.store/preview/issue-<N>/`.
 
 Goal Issues — только в этом репо (это и есть карточки на доске). PR — в таблицах выше.
 

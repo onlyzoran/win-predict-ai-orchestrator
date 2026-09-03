@@ -47,10 +47,10 @@ describe("resolvePreviewGitRef", () => {
 });
 
 describe("vpsPreviewUrl", () => {
-  it("gift-sales preview on VPS", () => {
+  it("gift-sales preview on domain", () => {
     assert.equal(
       vpsPreviewUrl("onlyzoran/gift-sales", 69),
-      "http://202.71.15.138/gift-sales/preview/issue-69/",
+      "https://gift-sales.store/preview/issue-69/",
     );
   });
 });
