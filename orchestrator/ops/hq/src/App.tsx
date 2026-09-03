@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FlowCanvas } from "./FlowCanvas";
 import { auditEdges, auditMeta, auditNodes } from "./flows/audit";
 import { cycleEdges, cycleMeta, cycleNodes } from "./flows/cycle";
@@ -14,9 +14,22 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 
+const tabIds = new Set<string>(tabs.map((t) => t.id));
+
+function tabFromHash(): TabId {
+  const id = window.location.hash.replace(/^#/, "");
+  return tabIds.has(id) ? (id as TabId) : "cycle";
+}
+
 export default function App() {
-  const [tab, setTab] = useState<TabId>("cycle");
+  const [tab, setTab] = useState<TabId>(tabFromHash);
   const active = useMemo(() => tabs.find((t) => t.id === tab) ?? tabs[0], [tab]);
+
+  useEffect(() => {
+    const onHashChange = () => setTab(tabFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   return (
     <div className="app">
@@ -26,14 +39,15 @@ export default function App() {
         </p>
         <nav className="tabs" aria-label="Схемы">
           {tabs.map((t) => (
-            <button
+            <a
               key={t.id}
-              type="button"
+              href={`#${t.id}`}
               className={`tab${tab === t.id ? " active" : ""}`}
+              aria-current={tab === t.id ? "page" : undefined}
               onClick={() => setTab(t.id)}
             >
               {t.meta.label}
-            </button>
+            </a>
           ))}
         </nav>
         <p className="hint">Масштаб: scroll · перемещение: drag по холсту</p>

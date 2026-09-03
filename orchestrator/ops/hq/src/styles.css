@@ -89,6 +89,7 @@ button {
   cursor: pointer;
   font-weight: 600;
   font-size: 0.88rem;
+  text-decoration: none;
   transition:
     color 0.15s ease,
     background 0.15s ease,
