@@ -6,7 +6,7 @@
 
 Юнит: `cursor-worker.service` → `agent worker --name win-predict-vps`.
 
-Клоны: `/opt/cursor-workers/{win-predict-ai,win-predict-ai-admin,win-predict-ai-data,win-predict-ai-ui,win-predict-ai-ios,shoppable-feed,gift-sales}`. Прод админки `/var/www/win-predict-ai-admin` сюда не монтировать.
+Клоны: `/opt/cursor-workers/{win-predict-ai,win-predict-ai-admin,win-predict-ai-data,win-predict-ai-ui,win-predict-ai-ios,shoppable-feed,gift-sales}`. Прод не монтировать в `--worker-dir`: `/var/www/win-predict-ai-admin`, `/var/www/gift-sales`.
 
 `win-predict-ai-ios` — исходники SwiftUI; на VPS нет Xcode, воркер только правит файлы и открывает PR.
 
@@ -14,7 +14,7 @@
 
 Прод и preview: `http://202.71.15.138/shoppable-feed/` и `…/preview/issue-<N>/`. Preview — dynamic Next.js на порту 3004 (API routes работают). Установка: `orchestrator/ops/install-shoppable-feed.sh` (от root после `git pull`).
 
-`gift-sales` — отдельный продукт, один клон: `git clone https://github.com/onlyzoran/gift-sales.git /opt/cursor-workers/gift-sales` (владелец `cursor-worker`). После этого перезапусти `cursor-worker.service` (в юните новый `--worker-dir`).
+`gift-sales` — воркер и прод раздельно, как админка. Воркер: `git clone https://github.com/onlyzoran/gift-sales.git /opt/cursor-workers/gift-sales` и `--worker-dir` в `cursor-worker.service`. Прод: `/var/www/gift-sales` (деплой `gift-sales-deploy.sh`, systemd `WorkingDirectory`).
 
 **ios-games** — per-Goal репо `onlyzoran/game-issue-<N>`. После scaffold (комментарий `<!-- orchestrator-game-repo:… -->` на Goal) на VPS от root:
 
@@ -27,7 +27,7 @@ chmod +x /opt/cursor-workers/win-predict-ai-orchestrator/orchestrator/ops/ensure
 
 На VPS нет Xcode — воркер правит Swift/ресурсы и открывает PR; сборка на Mac человека.
 
-Прод и preview: `http://202.71.15.138/gift-sales/` и `…/preview/issue-<N>/`. Preview — dynamic Next.js на порту 3005 (API routes работают). Установка nginx + systemd: `orchestrator/ops/install-gift-sales.sh` (от root после `git pull`). После merge PR в релизе Goal оркестратор запускает `gift-sales-deploy.sh` (клон `/opt/cursor-workers/gift-sales`, `npm ci && build`, `systemctl restart gift-sales.service`).
+Прод и preview: `http://202.71.15.138/gift-sales/` и `…/preview/issue-<N>/`. Preview — dynamic Next.js на порту 3005 (API routes работают). Установка nginx + systemd: `orchestrator/ops/install-gift-sales.sh` (от root после `git pull`). После merge PR в релизе Goal оркестратор запускает `gift-sales-deploy.sh` (клон `/var/www/gift-sales`, `npm ci` через `/usr/bin/node`, `systemctl restart gift-sales.service`).
 
 **Preview deploy (gift-sales, shoppable-feed):** board-watch поднимает demo автоматически — перед ревью, при переводе Goal в Review и при backfill карточек в Review (если URL отдаёт 404). Скрипты ищут open PR по маркеру `Parent: …/win-predict-ai-orchestrator#<N>` в body и билдят head SHA. Preview — один Next.js-процесс на продукт (gift-sales: 3005, shoppable-feed: 3004). Ручная проверка:
 

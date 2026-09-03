@@ -12,7 +12,7 @@
 
 ## Каталог — не прод
 
-Рабочие клоны: `/opt/cursor-workers/<repo>`. Прод админки: `/var/www/win-predict-ai-admin` — **не открывать, не править, не рестартить**.
+Рабочие клоны: `/opt/cursor-workers/<repo>`. Прод не монтировать в `--worker-dir`: `/var/www/win-predict-ai-admin`, `/var/www/gift-sales` — **не открывать, не править, не рестартить**.
 
 - Работай только в клоне репо из промпта.
 - Если репо `win-predict-ai-ui`: сначала `DESIGN.md`. Theme CSS не публиковать в npm. Не трогать app/admin.

@@ -7,11 +7,15 @@ Wants=network-online.target
 Type=simple
 User=cursor-worker
 Group=cursor-worker
-WorkingDirectory=/opt/cursor-workers/gift-sales
+WorkingDirectory=/var/www/gift-sales
 EnvironmentFile=-/etc/cursor-worker.env
+Environment=HOME=/opt/cursor-workers
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=NODE_ENV=production
 Environment=PORT=3002
 Environment=HOSTNAME=127.0.0.1
+Environment=GIFT_SALES_DB=/var/lib/gift-sales/data/quotes.db
+NoNewPrivileges=true
 ExecStart=/usr/bin/npm run start
 Restart=always
 RestartSec=10

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REF="${1:-origin/main}"
-APP="${GIFT_SALES_APP:-/opt/cursor-workers/gift-sales}"
+APP="${GIFT_SALES_APP:-/var/www/gift-sales}"
 
 if [[ -f /etc/cursor-worker.env ]]; then
   set +u
@@ -36,9 +36,14 @@ restart_service() {
 }
 
 if [[ ! -d $APP/.git ]]; then
-  echo "нет клона $APP — git clone https://github.com/onlyzoran/gift-sales.git $APP" >&2
+  echo "нет клона $APP — git clone https://github.com/onlyzoran/gift-sales.git $APP (прод, не worker-dir)" >&2
   exit 1
 fi
+
+# System Node only. Cursor agent ships Node 24; better-sqlite3 built with it
+# crashes under systemd /usr/bin/node (22).
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+hash -r
 
 cd "$APP"
 git_auth fetch origin --prune --tags
@@ -49,8 +54,8 @@ git checkout -f --detach "$REF"
 git reset --hard "$REF"
 git clean -fd -e node_modules -e .next
 
-npm ci
-npm run build
+/usr/bin/npm ci
+/usr/bin/npm run build
 restart_service
 
 echo "prod: http://202.71.15.138/gift-sales/"

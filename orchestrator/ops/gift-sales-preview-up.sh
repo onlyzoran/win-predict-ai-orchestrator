@@ -124,15 +124,17 @@ export default nextConfig;
 )
 PY
 
-npm ci
-npm run build
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+hash -r
+/usr/bin/npm ci
+/usr/bin/npm run build
 
 mkdir -p "$PREVIEW_APP"
 rsync -a --delete \
   --exclude node_modules --exclude .git \
   "$SRC/" "$PREVIEW_APP/"
 cd "$PREVIEW_APP"
-npm ci --omit=dev
+/usr/bin/npm ci --omit=dev
 
 mkdir -p "$TARGET"
 echo "$REF" > "$TARGET/.preview-ref"

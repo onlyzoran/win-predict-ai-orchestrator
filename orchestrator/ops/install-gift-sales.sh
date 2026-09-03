@@ -11,6 +11,7 @@ IP_SITE=/etc/nginx/sites-available/gift-sales-ip
 IP_SSL_SITE=/etc/nginx/sites-available/gift-sales-ip-ssl
 IP_SSL_EXAMPLE="$ROOT/orchestrator/ops/gift-sales-ip-ssl.nginx.conf.example"
 PREVIEW_ROOT=/var/www/gift-sales-preview
+PROD_APP=/var/www/gift-sales
 UNIT=/etc/systemd/system/gift-sales.service
 PREVIEW_UNIT=/etc/systemd/system/gift-sales-preview.service
 PREVIEW_APP=/opt/cursor-workers/gift-sales-preview-run
@@ -22,7 +23,23 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 install -d -o cursor-worker -g www-data -m 2755 "$PREVIEW_ROOT"
+install -d -o cursor-worker -g cursor-worker "$PROD_APP"
 install -d -o cursor-worker -g cursor-worker "$PREVIEW_APP"
+if [[ ! -d $PROD_APP/.git ]]; then
+  if [[ -f /etc/cursor-worker.env ]]; then
+    set +u
+    # shellcheck disable=SC1091
+    source /etc/cursor-worker.env
+    set -u
+  fi
+  PAT="${GITHUB_PAT:-${ORCHESTRATOR_GITHUB_TOKEN:-}}"
+  clone=(git clone https://github.com/onlyzoran/gift-sales.git "$PROD_APP")
+  if [[ -n ${PAT} ]]; then
+    basic="$(printf 'x-access-token:%s' "$PAT" | openssl base64 -A)"
+    clone=(git -c "http.extraheader=AUTHORIZATION: basic ${basic}" clone https://github.com/onlyzoran/gift-sales.git "$PROD_APP")
+  fi
+  sudo -u cursor-worker "${clone[@]}"
+fi
 install -m 644 "$ROOT/orchestrator/ops/gift-sales.nginx.conf" "$SNIPPET"
 install -m 644 "$ROOT/orchestrator/ops/gift-sales-ip.nginx.conf" "$IP_SITE"
 install -m 644 "$ROOT/orchestrator/ops/gift-sales.service.example" "$UNIT"
@@ -60,6 +77,7 @@ echo "HTTP IP site:  $IP_SITE → sites-enabled/gift-sales-ip"
 if [[ -n ${CERT_LIVE:-} ]]; then
   echo "HTTPS IP default: $IP_SSL_SITE (cert $CERT_LIVE) — чтобы не отдавать HQ SPA"
 fi
+echo "Prod app:      $PROD_APP (Next.js, не worker-dir)"
 echo "Preview root:  $PREVIEW_ROOT (markers)"
 echo "Preview app:   $PREVIEW_APP (dynamic, PORT=3005)"
 echo "Systemd unit:  $UNIT (PORT=3002)"
@@ -82,5 +100,7 @@ echo
 echo "Проверка: nginx -t && systemctl reload nginx"
 echo "URL: http://202.71.15.138/gift-sales/ (demo тоже HTTP; https://IP без своего имени)"
 echo
-echo "После npm run build в /opt/cursor-workers/gift-sales (basePath /gift-sales):"
+echo "Прод-клон: git clone …/gift-sales.git $PROD_APP (владелец cursor-worker)."
+echo "Воркер:    /opt/cursor-workers/gift-sales — не деплоить сюда."
+echo "После npm run build в $PROD_APP (basePath /gift-sales):"
 echo "    systemctl daemon-reload && systemctl enable --now gift-sales.service"
