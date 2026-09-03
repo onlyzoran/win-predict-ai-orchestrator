@@ -12,7 +12,7 @@
 
 `shoppable-feed` — отдельный продукт, один клон: `git clone https://github.com/onlyzoran/shoppable-feed.git /opt/cursor-workers/shoppable-feed` (владелец `cursor-worker`). После этого перезапусти `cursor-worker.service` (в юните новый `--worker-dir`).
 
-Прод и preview: `http://202.71.15.138/shoppable-feed/` и `…/preview/issue-<N>/`. Установка nginx + systemd: `orchestrator/ops/install-shoppable-feed.sh` (от root после `git pull`).
+Прод и preview: `http://202.71.15.138/shoppable-feed/` и `…/preview/issue-<N>/`. Preview — dynamic Next.js на порту 3004 (API routes работают). Установка: `orchestrator/ops/install-shoppable-feed.sh` (от root после `git pull`).
 
 `gift-sales` — отдельный продукт, один клон: `git clone https://github.com/onlyzoran/gift-sales.git /opt/cursor-workers/gift-sales` (владелец `cursor-worker`). После этого перезапусти `cursor-worker.service` (в юните новый `--worker-dir`).
 

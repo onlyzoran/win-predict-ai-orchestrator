@@ -1,0 +1,21 @@
+[Unit]
+Description=shoppable-feed Goal preview (dynamic Next.js, port 3004)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cursor-worker
+Group=cursor-worker
+WorkingDirectory=/opt/cursor-workers/shoppable-feed-preview-run
+EnvironmentFile=-/etc/cursor-worker.env
+Environment=NODE_ENV=production
+Environment=PORT=3004
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

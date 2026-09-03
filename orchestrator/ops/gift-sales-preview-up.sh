@@ -70,7 +70,7 @@ if [[ -z $REF ]]; then
 fi
 
 if [[ -n $REF ]]; then
-  REF="$(git rev-parse --verify "$REF^{commit}")"
+  REF="$(git rev-parse --verify "$REF^{commit}" 2>/dev/null || git rev-parse --verify "origin/${REF#origin/}^{commit}")"
 fi
 
 git checkout -f --detach "$REF"
