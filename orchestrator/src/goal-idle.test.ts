@@ -19,6 +19,13 @@ describe("taskOpenPrNeedsReview", () => {
       false,
     );
   });
+
+  it("true when reviewing stale (reviewer interrupted)", () => {
+    assert.equal(
+      taskOpenPrNeedsReview({ phase: "reviewing", reviewingActive: false }, true, false),
+      true,
+    );
+  });
 });
 
 describe("recentlyIdleDispatchNotified", () => {

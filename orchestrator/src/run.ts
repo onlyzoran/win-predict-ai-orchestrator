@@ -94,6 +94,8 @@ const PLAN_MARKER = "<!-- orchestrator-plan -->";
 const DISPATCH_MARKER = "<!-- orchestrator-dispatch -->";
 const STATE_RE = /<!-- orchestrator-state:(.*?) -->/;
 const WORKING_STALE_MS = 3 * 60 * 60 * 1000;
+/** Reviewer runs inside board-watch; if killed, resume after this window (not 3h working stale). */
+const REVIEWING_STALE_MS = 10 * 60 * 1000;
 const REVIEW_MAX_CHANGES = 2;
 const REVIEW_CHANGES_DEBOUNCE_MS = 60_000;
 const PR_DIFF_MAX_CHARS = 100_000;
@@ -606,7 +608,10 @@ function isActiveWorking(state: DispatchState | undefined): boolean {
 }
 
 function isActiveReviewing(state: DispatchState | undefined): boolean {
-  return isActivePhase(state, "reviewing");
+  if (state?.phase !== "reviewing") return false;
+  if (!state.at) return true;
+  const started = Date.parse(state.at);
+  return !Number.isNaN(started) && Date.now() - started < REVIEWING_STALE_MS;
 }
 
 function isActivePhase(state: DispatchState | undefined, phase: DispatchPhase): boolean {
